@@ -11,9 +11,9 @@ import numpy as np
 import matplotlib.pyplot as plt
 import matplotlib.gridspec as gridspec
 
-import pyandy.core.plotting as lpplt
-from  pyandy.auxiliary import aux_sql_func as aql
-from pyandy.auxiliary.aux_general import get_config
+import pyAndy.core.plotting as lpplt
+from  pyAndy.auxiliary import aux_sql_func as aql
+from pyAndy.auxiliary.aux_general import get_config
     
 reload(lpplt)
 reload(aql)
