@@ -163,7 +163,23 @@ class PlotPageData():
 
                 df_1 = pd.merge(df_1, df_add, on='key')
 
-        return df_1.join(df.set_index(cols)[values], on=cols).fillna(fillval)
+        
+        # the following conversion is a work-around due to a pandas bug
+        # https://github.com/pandas-dev/pandas/pull/21310
+
+        converted_bool_cols = []
+        for _df in [df_1, df]:
+            for col in _df.columns:
+                if _df[col].dtype.name == 'bool':
+                    _df[col] = _df[col].astype(str)
+                    converted_bool_cols.append(col)
+        
+        df_1 = df_1[cols].join(df.set_index(cols)[values], on=cols).fillna(fillval)
+        
+        for col in converted_bool_cols:
+                df_1[col] = df_1[col].astype(bool)
+                    
+        return df_1
 
 
     def get_data_raw(self):
