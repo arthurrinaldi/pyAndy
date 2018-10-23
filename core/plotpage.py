@@ -14,7 +14,7 @@ import matplotlib.gridspec as gridspec
 import pyAndy.core.plotting as lpplt
 from  pyAndy.auxiliary import aux_sql_func as aql
 from pyAndy.auxiliary.aux_general import get_config
-    
+
 reload(lpplt)
 reload(aql)
 
@@ -95,7 +95,7 @@ class PlotPageData():
                         tweezer = [],
                         sc = 'public', # database schema
 
-                        relto=False,
+                        relto=None,
                         ind_rel='',
                         reltype='',
 
@@ -163,7 +163,7 @@ class PlotPageData():
 
                 df_1 = pd.merge(df_1, df_add, on='key')
 
-        
+
         # the following conversion is a work-around due to a pandas bug
         # https://github.com/pandas-dev/pandas/pull/21310
 
@@ -173,12 +173,12 @@ class PlotPageData():
                 if _df[col].dtype.name == 'bool':
                     _df[col] = _df[col].astype(str)
                     converted_bool_cols.append(col)
-        
+
         df_1 = df_1[cols].join(df.set_index(cols)[values], on=cols).fillna(fillval)
-        
-        for col in converted_bool_cols:
-                df_1[col] = df_1[col].astype(bool)
-                    
+
+#        for col in converted_bool_cols:
+#                df_1[col] = df_1[col].astype(bool)
+
         return df_1
 
 
@@ -307,7 +307,7 @@ class PlotPageData():
 
         # calculate values relative to reference, if relevant
         for ind_rel, relto, reltype in zip(self.ind_rel_lst, self.relto_lst, self.reltype_lst):
-            bool_calc_rel = (True if relto else False) and (True if ind_rel else False)
+            bool_calc_rel = relto != None and (True if ind_rel else False)
             if bool_calc_rel:
                 print(ind_rel, relto, reltype )
                 self.data_raw = self.calc_relative_raw_multi(self.data_raw,
@@ -320,13 +320,17 @@ class PlotPageData():
                     self.post_filtering_raw(ind_rel, val_lst)
 
 
+        # make sure all index values are strings or int or float:
+        for col in self._pv_kws['columns'] + self._pv_kws['index']:
+            if isinstance(self.data_raw[col].dtype, np.dtype):
+                self.data_raw[col] = self.data_raw[col].astype(str)
+            
+
         # calculate pivot table
         dfpv = self.data_raw.pivot_table(**self._pv_kws, aggfunc=self.aggfunc)
         dfpv = pd.DataFrame(dfpv)
 
-
         self.__data = dfpv.copy()
-
 
         # make tuples out of column names
         self.__data.columns = [tuple([c]) if type(c) != tuple else c
@@ -338,7 +342,6 @@ class PlotPageData():
         # shouldn't this happen before calc_relative?
         self.calc_totals()  # calculate sums of selected series
 
-#
 #        bool_calc_rel = ((True if self.relto else False)
 #                          and (True if self.ind_rel else False))
 #        if bool_calc_rel:
@@ -1019,7 +1022,7 @@ class PlotTiled(PlotPage):
 
 
 
-    def add_page_legend(self, slct_plot=None):
+    def add_page_legend(self, slct_plot=None, handles=None, labels=None):
 
         legkw = {'bbox_transform': self.fig.transFigure,
                  'bbox_to_anchor': (1, 1),
@@ -1045,8 +1048,8 @@ class PlotTiled(PlotPage):
             else:
                 _slct_plot = self.plotdict[slct_plot]
 
-            handles = _slct_plot.pltlgd_handles
-            labels = _slct_plot.pltlgd_labels
+            handles = handles if handles else _slct_plot.pltlgd_handles
+            labels = labels if labels else _slct_plot.pltlgd_labels
 
         self.axarr[0][0].legend(handles, labels, **legkw)
 
@@ -1148,6 +1151,22 @@ class PlotTiled(PlotPage):
             self.current_plot = lpplt.PlotPandas(**kwargs)
 
 
+    def get_legend_handles_labels(self, unique=True, **kwargs):
+
+        hdls_lbls = []
+        for plot in self.plotdict.values():
+            plot_hdl, plot_lbl = plot.get_legend_handles_labels(**kwargs)
+            hdls_lbls += list(zip(plot_hdl, plot_lbl))
+
+        if unique:
+            hdls_lbls_new = []
+            for hhll in hdls_lbls:
+                if not hhll[1] in [ll for _, ll in hdls_lbls_new]:
+                    hdls_lbls_new.append(hhll)
+            hdls_lbls = hdls_lbls_new
+
+        return list(zip(*hdls_lbls))
+
 
     def ax_loop(self):
         '''
@@ -1168,6 +1187,7 @@ class PlotTiled(PlotPage):
 
                 if index_slct in self.pltpgdata.data.index or index_slct == tuple():
 
+                    print('index_slct', index_slct)
                     data_slct_0 = pd.DataFrame(self.pltpgdata.data.loc[index_slct])
                     data_slct_0 = self.drop_nan_cols(data_slct_0)
 
