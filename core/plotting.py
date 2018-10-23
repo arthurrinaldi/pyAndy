@@ -311,14 +311,20 @@ class PlotsBase(metaclass=Meta):
 
             self.labels.update({(labs[it], it): lab})
 
-    def get_legend_handles_labels(self):
+    def get_legend_handles_labels(self, keep_n=None):
         '''
         Get legend handles and labels for the whole axes.
 
         If these are created manually (such as in StackedArea), the method is
         overwritten in the respective child class.
         '''
-        return self.ax.get_legend_handles_labels()
+
+        hdls_lbls = self.ax.get_legend_handles_labels()
+        if isinstance(keep_n, int) or hasattr(keep_n, 'len'):
+            hdls_lbls = list(zip(*[(hh, ll.split(', ')[keep_n])
+                                   for hh, ll in zip(*hdls_lbls)]))
+
+        return hdls_lbls
 
 
     def append_plot_legend_handles_labels(self):
