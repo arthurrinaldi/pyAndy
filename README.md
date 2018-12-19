@@ -9,6 +9,7 @@ TODO:
 * wrap reindex/combine with series_order
 * automate add_subplotletter
 * check axes_rotation implementation
+* support for hatches
 * implement shared axis labels, like so:
 
 ```python
