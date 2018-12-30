@@ -1001,14 +1001,16 @@ class BoxPlot(PlotsBase):
 
 
 
-def add_subplotletter(ax, n, ha='left', va='top', loc=(0.01,0.99), fs=15):
+def add_subplotletter(ax, n, ha='left', va='top', loc=(0, 1), offs=(5, -5), fs=15):
     list_abc = ['(%s)'%ii for ii in list('abcdefghijklmnopqrstuvwxyz')]
 
-    t = ax.text(*loc, list_abc[n], transform=ax.transAxes,
-            fontsize=fs, va=va, ha=ha)
-
+    t = ax.annotate(list_abc[n],
+                    xy=loc, xycoords=ax.transAxes,
+                    xytext=offs, textcoords='offset points',
+                    fontsize=fs, va=va, ha=ha)
     t.set_bbox(dict(facecolor='white', linewidth=0, alpha=0.5,
                     boxstyle='square,pad=0'))
+    t.set_zorder(1000)
 
 # %%
 if __name__ == '__main__':
