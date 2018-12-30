@@ -694,7 +694,7 @@ class StackedArea(StackedBase):
             xpos = self.xpos
 
 
-        if self.edgewidth > 0 or (not self.edgewidth):
+        if self.edgewidth == 0 or (not self.edgewidth):
             edge_opacity = 0
             edgecolor = None
             plot_line = [None]
@@ -706,8 +706,8 @@ class StackedArea(StackedBase):
                                     marker=None,
                                     linewidth=self.edgewidth,
                                     alpha=edge_opacity,
-                                    color=self.edgecolor,
-                                    where='mid',)
+                                    color=edgecolor,
+                                    where='post',)
 
 
         plot_area = self.ax.fill_between(xpos, self.offs_slct, self.offs_slct + y,
