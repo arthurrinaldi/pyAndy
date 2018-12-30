@@ -530,8 +530,6 @@ class PlotPandas(PlotsBase):
         for imeth in _pd_method:
             obj = getattr(obj, imeth)
 
-        print(self.data)
-
         _plotfunc = obj
 
         color_list = list(map(self.colors.get,
@@ -595,19 +593,6 @@ class StackedBase(PlotsBase):
         data columns to the parameter data_offset.
         '''
 
-        print(self.offset_col)
-        print(data.columns)
-
-#        if self.offset_col:
-#            pass
-#            self.data_offset = self.data[[c for c in data.columns
-#                                          if self.offset_col
-#                                          in c][0]].astype(float)
-#
-#            self.data = self.data[[c for c in data.columns
-#                                   if not self.offset_col in c]]
-#        else:
-
         self.data_offset = self.get_zero_offset(data)
 
 
@@ -663,10 +648,6 @@ class StackedBase(PlotsBase):
         add_neg[np.isnan(add_neg)] = 0
         add_neg[add_neg >= 0] = 0
 
-        print('offs_pos', offs_pos, type(offs_pos))
-
-        print('add_pos', add_pos, type(add_pos))
-
         offs_pos += add_pos
         offs_neg += add_neg
         return offs_pos, offs_neg
@@ -683,6 +664,7 @@ class StackedBase(PlotsBase):
         return np.sign(np.nan_to_num(y))
 
 
+# %%
 
 class StackedArea(StackedBase):
     ''' Stacked area plot. '''
@@ -723,6 +705,19 @@ class StackedArea(StackedBase):
                              linewidth=0,
                              label=ic, step='mid',
                              )
+#
+#data = plt.current_plot.data.copy()
+##
+##
+#self = StackedArea(data, edgecolor='k', opacity=1, edgewidth=2)
+
+
+
+# %%
+
+
+
+
 #
 #        from matplotlib.transforms import Affine2D
 #        from matplotlib.collections import PathCollection
@@ -812,9 +807,6 @@ class StackedGroupedBar(StackedBase):
 
                 data_bar = self.data.loc[self.data.index.get_level_values(-1) == self.bar_name]
 
-                print(self.data)
-                print(self.bar_name)
-
                 data_bar = self.data.xs(self.bar_name, axis=0, level=-1)
 
                 # update xpos due to bar selection
@@ -823,11 +815,6 @@ class StackedGroupedBar(StackedBase):
                 y = np.array([iy for iy in data_bar[ic].get_values()])
 
                 self.reset_offset(data_bar)
-
-
-
-                print('self.xpos: ', self.ibar, self.xpos)
-
 
                 ic_name = self.c_list_names[iic]
                 ic_color = self.c_list_color[iic]
