@@ -157,6 +157,7 @@ class PlotsBase(metaclass=Meta):
                     'axes_rotation': False,
                     'gridpos': (0, 0),
                     'seriesplotkws': {},
+                    'step': 'post',
                     }
         for key, val in defaults.items():
             setattr(self, key, val)
@@ -627,6 +628,7 @@ class StackedBase(PlotsBase):
         ''' Update the offset after each data series. '''
 
         print('y in adapt_plot_series: ', y)
+        self.y = y
         self.offs_pos, self.offs_neg = self.set_offset(y, self.offs_pos,
                                                        self.offs_neg)
 
@@ -681,6 +683,15 @@ class StackedArea(StackedBase):
 #        edgecolor = self.colors[ic_color] if self.edgecolor is None else self.edgecolor
 
 
+        if self.step == 'post':
+            dx = (self.xpos[2] - self.xpos[1])
+            xpos = [pos - 0.5 * dx for pos in self.xpos] + [self.xpos[-1] + 0.5 * dx] #copy
+            y = np.append(y, y[-1])
+            self.offs_slct = np.append(self.offs_slct, self.offs_slct[-1])
+    #        xpos[-1] = xpos[-1] + 0.5 * (xpos[-1] - xpos[-2])
+    #        xpos[0] = xpos[0] + 0.5 * (xpos[1] - xpos[0])
+        else:
+            xpos = self.xpos
 
 
         if self.edgewidth > 0 or (not self.edgewidth):
@@ -691,7 +702,7 @@ class StackedArea(StackedBase):
             edge_opacity = self.opacity[ic_color]
             edgecolor = self.edgecolor
 
-            plot_line = self.ax.step(self.xpos, self.offs_slct + y,
+            plot_line = self.ax.step(xpos, self.offs_slct + y,
                                     marker=None,
                                     linewidth=self.edgewidth,
                                     alpha=edge_opacity,
@@ -699,11 +710,11 @@ class StackedArea(StackedBase):
                                     where='mid',)
 
 
-        plot_area = self.ax.fill_between(self.xpos, self.offs_slct, self.offs_slct + y,
+        plot_area = self.ax.fill_between(xpos, self.offs_slct, self.offs_slct + y,
                              color=self.colors[ic_color],
                              alpha=self.opacity[ic_color],
                              linewidth=0,
-                             label=ic, step='mid',
+                             label=ic, step=self.step,
                              )
 #
 #data = plt.current_plot.data.copy()
