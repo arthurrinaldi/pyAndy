@@ -132,7 +132,7 @@ class PlotsBase(metaclass=Meta):
                     'loc_labels': 0.5,
                     'label_angle': 0,
                     'label_subset': False,
-                    'label_ha': 'center',
+                    'label_ha': 'left',
                     'bar_label_ypos': 0,
                     'barname_angle': 0,
                     'barname': None,
