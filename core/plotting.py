@@ -288,7 +288,7 @@ class PlotsBase(metaclass=Meta):
         or a selection thereof
         """
 
-        if type(offs) == bool and offs == False:
+        if type(offs) == bool and not offs:
             offs = np.zeros(len(y))
         labs = [self.label_format.format(iy)
                 if abs(iy) > self.label_threshold else '' for iy in y]
