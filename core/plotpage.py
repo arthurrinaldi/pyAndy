@@ -131,7 +131,7 @@ class PlotPageData():
     def update(self):
 
         if self._from_sql:
-            print('Getting data from sql table.')
+            print('Getting data from sql table %s.'%self.table)
             self.get_data_raw()
         else:
             print('Getting data from DataFrame.')
