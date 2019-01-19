@@ -186,7 +186,7 @@ class PlotPageData():
 
         self.data_raw_0 = aql.read_sql(self.db, self.sc, self.table,
                                        filt=self.filt, tweezer=self.tweezer,
-                                       verbose=False)
+                                       verbose=True)
 
         self.data_raw_0 = self.data_raw_0.drop_duplicates()
 
