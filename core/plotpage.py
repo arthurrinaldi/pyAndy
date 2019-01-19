@@ -418,8 +418,9 @@ class PlotPageData():
     def calc_relative_raw_multi(self, df, ind_rel, relto, reltype):
 
 
+        list_ind_rel = df[ind_rel].unique().tolist()
 
-        can_do = relto in df[ind_rel].unique().tolist()
+        can_do = relto in list_ind_rel
 
         if can_do:
 
