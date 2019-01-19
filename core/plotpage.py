@@ -583,7 +583,7 @@ class PlotPageData():
 
     def order_data(self):
         ''' order lowest column level by list self.series_order '''
-        if len(self.series_order) > 0:
+        if self.series_order:
             list_ord = [[idat for idat in self.__data.columns
                          if idat[-1] == iord]
                         for iord in self.series_order]
@@ -591,7 +591,7 @@ class PlotPageData():
 
             list_rest = [c for c in self.__data.columns if not c in list_ord]
 
-            if len(list_rest) > 0:
+            if list_rest:
                 data_rest = self.__data[list_rest]
             else:
                 data_rest = pd.DataFrame()
