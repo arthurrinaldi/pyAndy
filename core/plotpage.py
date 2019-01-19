@@ -325,7 +325,7 @@ class PlotPageData():
 
 
         # make sure all index values are strings or int or float:
-        for col in self._pv_kws['columns'] + self._pv_kws['index']:
+        for col in self._pv_kws['columns']:# + self._pv_kws['index']:
             if isinstance(self.data_raw[col].dtype, np.dtype):
                 self.data_raw[col] = self.data_raw[col].astype(str)
             
