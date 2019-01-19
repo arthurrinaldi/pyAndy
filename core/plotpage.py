@@ -1201,7 +1201,7 @@ class PlotTiled(PlotPage):
 
                     print('index_slct', index_slct)
                     data_slct_0 = pd.DataFrame(self.pltpgdata.data.loc[index_slct])
-                    data_slct_0 = self.drop_nan_cols(data_slct_0)
+                    data_slct_0 = self.remove_nan_cols(data_slct_0)
 
                     # plot-specific updates of plotkwargs
                     # 1. parameters from provided plotkwargsdict
@@ -1257,7 +1257,7 @@ class PlotTiled(PlotPage):
                               self.current_plot.pltlgd_handles,
                               self.current_plot.pltlgd_labels)
 
-    def drop_nan_cols(self, df):
+    def remove_nan_cols(self, df):
         '''
         Drop data columns which are nan only.
 
@@ -1265,7 +1265,10 @@ class PlotTiled(PlotPage):
         addition.
         '''
 
-        return df.loc[:, -df.isnull().all(axis=0)]
+        if self.drop_nan_cols:
+            return df.loc[:, -df.isnull().all(axis=0)]
+        else:
+            return df
 
     def _gen_caption_string(self):
         '''
