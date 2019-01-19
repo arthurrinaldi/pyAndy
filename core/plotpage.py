@@ -6,10 +6,14 @@ import itertools
 from importlib import reload
 import copy
 
+import subprocess
+
 import pandas as pd
 import numpy as np
 import matplotlib.pyplot as plt
 import matplotlib.gridspec as gridspec
+from matplotlib.backends.backend_pdf import PdfPages
+
 
 import pyAndy.core.plotting as lpplt
 from  pyAndy.auxiliary import aux_sql_func as aql
