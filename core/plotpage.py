@@ -890,6 +890,18 @@ class PlotTiled(PlotPage):
             self.draw_plots()
             self.finalize_plottiled()
 
+    @staticmethod
+    def save_plot(fig, name):
+
+        with PdfPages(name + '.pdf') as pp:
+            pp.savefig(fig)
+
+        fig.savefig(name + '.svg')
+        cmd = 'inkscape --file {f}.svg --export-emf {f}.emf'.format(f=name)
+        cmd = cmd.split(' ')
+        subprocess.run(cmd)
+
+
     @classmethod
     def concat(cls, concat_list, concat_dir='y',
                sharex=False, sharey=False, draw_now=True, alt_align=False,
