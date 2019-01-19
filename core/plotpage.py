@@ -20,39 +20,6 @@ from pyAndy.core.plotpagedata import PlotPageData as PlotPageData
 reload(lpplt)
 reload(aql)
 
-# %%
-
-#
-#
-#import numpy as np
-#import matplotlib.pyplot as plt
-#
-## We'll use two separate gridspecs to have different margins, hspace, etc
-#gs_top = plt.GridSpec(5, 2, top=0.95    )
-#gs_base = plt.GridSpec(5, 1, hspace=0)
-#fig = plt.figure()
-#
-## Top (unshared) axes
-#topax = fig.add_subplot(gs_top[0,:])
-#topax.plot(np.random.normal(0, 1, 1000).cumsum())
-#
-## The four shared axes
-#ax = fig.add_subplot(gs_base[1,:]) # Need to create the first one to share...
-#other_axes = [fig.add_subplot(gs_base[i,:], sharex=topax) for i in range(2, 5)]
-#bottom_axes = [ax] + other_axes
-#
-## Hide shared x-tick labels
-#for ax in bottom_axes[:-1]:
-#    plt.setp(ax.get_xticklabels(), visible=False)
-#
-## Plot variable amounts of data to demonstrate shared axes
-#for ax in bottom_axes:
-#    data = np.random.normal(0, 1, np.random.randint(10, 500)).cumsum()
-#    ax.plot(data)
-#    ax.margins(0.05)
-
-#%%
-
 
 class PlotPage:
     """
@@ -103,61 +70,6 @@ class PlotPage:
         if not page_dim is None:
             self.fig.set_size_inches([PlotPage.page_scale * idim
                                       for idim in page_dim])
-#
-#    def __init__(self, nx, ny, sharex, sharey, **kwargs):
-#
-#        self.pg_layout = PlotPage.pg_layout.copy()
-#
-#        # only one of hspace or wspace can be a list!
-#        self.pg_layout['hspace'] = [0, 0.1, 0, 0]
-#        self.pg_layout['wspace'] = 0.2
-#
-#        self.pg_layout['sharex'] = [True, True, True, True, False]
-#        self.pg_layout['sharey'] = False
-#
-#        self.pg_layout['height_ratios'] = [4,3,5,7,4]
-#
-#        nx = 2
-#        ny = 5
-#
-#        hspace = self.pg_layout['hspace']
-#
-#        # number of gridspecs required is determined by the layout
-#        # and coupling specified through hspace, wspace
-#
-#        # sharex, sharey can be applied at will in the corresponding loops
-#
-#        # how many gridspecs do we need and how many axes do they contain?
-#        gs_mapy = [1]
-#        for iy in range(1, ny):
-#            if iy > 0 and hspace[iy] == hspace[iy - 1]:
-#                gs_mapx[-1] += 1
-#            elif iy > 0 and hspace[iy] != hspace[iy - 1]:
-#                gs_mapx.append(1)
-#
-#        gs_mapx
-#
-#gs_mapx = [2, 3]
-#
-#
-#
-#        for key, val in self.pg_layout.items():
-#            if key in kwargs.keys():
-#                self.pg_layout.update({key: kwargs.pop(key)})
-#
-#        page_dim = self.pg_layout.pop('page_dim')
-#        self.fig, self.axarr = plt.subplots(nrows=ny, ncols=nx,
-#                                            sharex=sharex,
-#                                            sharey=sharey,
-#                                            squeeze=False,
-#                                            gridspec_kw=self.pg_layout,
-#                                            dpi=self.dpi
-#                                            )
-#        self.axarr = self.axarr.T
-#
-#        if not page_dim is None:
-#            self.fig.set_size_inches([PlotPage.page_scale * idim
-#                                      for idim in page_dim])
 
 class PlotTiled(PlotPage):
     ''' Set up a tiled plot page. '''
@@ -462,16 +374,7 @@ class PlotTiled(PlotPage):
 
         for nameplot, plot in self.plotdict.items():
 
-#            print('Drawing %s'%str(nameplot))
-
             plot.draw_plot()
-
-
-
-#            handles, labels = self.current_plot.ax.get_legend_handles_labels()
-#            self.pglgd_handles += handles
-#            self.pglgd_labels += labels
-
 
 
         # loop over plots
