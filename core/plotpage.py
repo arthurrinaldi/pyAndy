@@ -1288,7 +1288,8 @@ class PlotTiled(PlotPage):
         if not 'caption_str' in self.__dict__.keys():
             self._gen_caption_string()
 
-        plt.figtext(0.05, 0.05, self.caption_str, va='top', wrap=True)
+        plt.figtext(0.05, 0.05, self.caption_str.replace('_', ' '),
+                    va='top', wrap=True)
 
     def get_plot_ax_list(self):
         '''
