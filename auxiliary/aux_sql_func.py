@@ -8,12 +8,23 @@ import time
 import pandas as pd
 from sqlalchemy import create_engine
 import sqlalchemy
+from collections import OrderedDict
+
+
+import subprocess
+from os import walk
+try:
+    # Linux only
+    from sh import pg_dump
+except:
+    pass
+import os
 
 import string
 import random
 
-from pyAndy.auxiliary.aux_general import get_config
-
+#from grimsel.auxiliary.aux_general import get_config
+import grimsel.config as config
 
 # %%
 
@@ -33,10 +44,15 @@ class sql_connector():
 
         self.db = db
 
+        config_dict = {
+        'user': config.PSQL_USER,
+        'password': config.PSQL_PASSWORD,
+        'host': config.PSQL_HOST,
+        'port': config.PSQL_PORT
+        }
 
-        kwargs_keys = ['user', 'password', 'host', 'port']
-        for kw in kwargs_keys:
-            setattr(self, kw, get_config('sql_connect')[kw])
+        for kw, val in config_dict.items():
+            setattr(self, kw, val)
         self.__dict__.update(**kwargs)
 
         self.pg_str = ('dbname={db} user={user} password={password} '
@@ -45,22 +61,36 @@ class sql_connector():
         self.sqlal_str = ('postgresql://{user}:{password}'
                           '@{host}:{port}/{db}').format(**self.__dict__)
 
-    def get_pg_con_cur(self):
-        conn = pg.connect(self.pg_str)
-        cur = conn.cursor()
+        self._sqlalchemy_engine = None
+        self._conn = None
+        self._cur = None
 
-        return conn, cur
-    
+    def get_sqlalchemy_engine(self):
+
+        if not self._sqlalchemy_engine:
+            self._sqlalchemy_engine = create_engine(self.sqlal_str)
+
+        return self._sqlalchemy_engine
+
+    def get_pg_con_cur(self):
+
+        if not self._conn:
+            self._conn = pg.connect(self.pg_str)
+            self._cur = self._conn.cursor()
+
+        return self._conn, self._cur
+
     def __repr__(self):
         strg = '%s\n%s'%(self.pg_str, self.sqlal_str)
         return(strg)
+
 
 def exec_sql(exec_str, ret_res=True, time_msg=False, db=None, con_cur=None):
     t = time.time()
 
     ''' Pass sql string to the server. '''
     conn, cur = (sql_connector(db).get_pg_con_cur()
-                 if con_cur is None else con_cur)
+                 if not con_cur else con_cur)
 
     cur.execute(exec_str)
     conn.commit()
@@ -79,6 +109,7 @@ def exec_sql(exec_str, ret_res=True, time_msg=False, db=None, con_cur=None):
 
     if ret_res:
         return result
+
 
 # %%
 
@@ -104,7 +135,6 @@ def get_column_string(cols, kind):
                                   for col in cols])
 
 
-
 # %%
 
 def get_sql_tables(sc, db=None):
@@ -120,9 +150,10 @@ def get_sql_tables(sc, db=None):
                '''.format(sc=sc)
     return [itb[0] for itb in exec_sql(exec_str, db=db)]
 
+
 # %%
 
-def get_sql_cols(tb, sc='public', db=None):
+def get_sql_cols(tb, sc='public', db=None, con_cur=None):
     '''
     Returns the names and data types of the selected table as a dictionary
     {'col_name': 'col_type', ...}
@@ -135,11 +166,11 @@ def get_sql_cols(tb, sc='public', db=None):
                 AND table_name = \'{tb}\'
                 '''.format(sc=sc, tb=tb)
 
-    lst_col = exec_sql(exec_str, db=db)
-    return {kk: vv for kk, vv in lst_col}
+    exec_sql_kwargs = {'exec_str': exec_str}
+    exec_sql_kwargs.update({'con_cur': con_cur} if con_cur else {'db': db})
 
-#if __name__ == '__main__':
-#    get_sql_cols('public')
+    dict_col = OrderedDict(exec_sql(**exec_sql_kwargs))
+    return dict_col
 
 
 # %%
@@ -184,31 +215,46 @@ Hit enter to proceed.
              '''.format(sc_out=sc), db=db)
 
 
+
 # %%
 
-def write_sql(df, db, sc, tb, if_exists, chunksize=None):
+def write_sql(df, db=None, sc=None, tb=None, if_exists=None,
+              engine=None, chunksize=None, con_cur=None):
 
-    engine = create_engine(get_config('sql_connect')['sqlalchemy']
-                           .format(db=db))
+
+    if not engine:
+        sqlc = sql_connector(db)
+        _engine = sqlc.get_sqlalchemy_engine()
+    else:
+        _engine = engine
+
+    if con_cur:
+        exec_sql_kwargs = dict(con_cur=con_cur)
+    else:
+        exec_sql_kwargs = dict(db=db)
+
+
 
     if if_exists == 'replace':
         exec_str = ('''DROP TABLE IF EXISTS {sc}.{tb} CASCADE;
                     ''').format(sc=sc, tb=tb)
-        exec_sql(exec_str, db=db)
+        exec_sql(**dict(exec_str=exec_str, **exec_sql_kwargs))
     else:
         # add columns which exist in the source table but not in
         # the database table;
         # using some internal pandas methods to map the pandas
         # datatypes to SQL datatypes
 
-        pandas_sqltable = pd.io.sql.SQLTable('_', engine, df, schema='_',
+        pandas_sqltable = pd.io.sql.SQLTable('_', _engine, df, schema='_',
                                              index=False)
 
         dtype_mapper = pandas_sqltable._sqlalchemy_type
 
         new_cols = pandas_sqltable._get_column_names_and_types(dtype_mapper)
 
-        old_cols = get_sql_cols(tb, sc, db).keys()
+        old_cols = get_sql_cols(tb, sc,
+                                **({'con_cur': con_cur}
+                                   if con_cur else {'db': db})).keys()
 
         VisitableType = sqlalchemy.sql.visitors.VisitableType
 
@@ -225,11 +271,13 @@ def write_sql(df, db, sc, tb, if_exists, chunksize=None):
                         ALTER TABLE {sc}.{tb}
                         {add_str};
                         '''.format(sc=sc, tb=tb, add_str=add_str)
-            exec_sql(exec_strg, db=db)
+            exec_sql(**dict(exec_str=exec_strg, **exec_sql_kwargs))
 
-    df.to_sql(name=tb, con=engine, schema=sc, if_exists=if_exists,
+    df.to_sql(name=tb, con=_engine, schema=sc, if_exists=if_exists,
               index=False, chunksize=chunksize)
-    engine.dispose()
+
+    if not engine:
+        _engine.dispose()
 
 # %%
 
@@ -337,8 +385,94 @@ def copy_table_structure(sc, tb, sc0, db, verbose=False):
 
 # %%
 
-def read_sql(db, sc, tb, filt=False, filt_func=False, drop=False, keep=False,
-             copy=False, tweezer=False, distinct=False, verbose=False):
+# OBSOLETE? read_sql with intermediate temporary table
+
+#def read_sql(db, sc, tb, filt=False, filt_func=False, drop=False, keep=False,
+#             copy=False, tweezer=False, distinct=False, verbose=False):
+#    '''
+#    Keyword arguments:
+#    tweezer -- list; filter (exclude or include) single combinations of values
+#                tweezer = [' AND ', ({'nd': 'IT0', 'bool_out': True}, ' NOT '),
+#                                    ({'nd': 'FR0', 'bool_out': False}, ' NOT ')]
+#    '''
+#
+#    sqlc = sql_connector(db)
+#    engine = sqlc.get_sqlalchemy_engine()
+#
+#    if verbose:
+#        print('Reading ' + sc + '.' + tb +  ' from database ' + db)
+#        print('filt=', filt)
+#    tweez_str = ''
+#    if tweezer:
+#        if type(tweezer[0]) is tuple:
+#            tweezer.insert(0, ' AND ')
+#
+#        tweez_str = ' %s (' %tweezer[0]
+#        tweez_str += ' AND '.join([tw[1] + '(' + ' AND '.join([str(kk) + ' = ' + '\'' + str(vv) + '\'' for kk, vv in tw[0].items()]) + ')' for tw in tweezer[1:]])
+#        tweez_str += ')'
+#        if verbose:
+#            print('tweez_str', tweez_str)
+#
+#    # filtering through sql
+#    if filt:
+#
+#        temp_tb = ('temp_read_sql_filtered_'
+#                   + ''.join(random.choice(string.ascii_lowercase)
+#                             for _ in range(10)))
+#        if not filt_func:
+#            filt_func = {}
+#
+#        distinct_str = 'DISTINCT ' if distinct else ''
+#        keep_str = ', '.join(keep) if keep else '*'
+#        filt_str = assemble_filt_sql(filt, filt_func)
+#        exec_str = ('''
+#                    DROP TABLE IF EXISTS {temp_tb} CASCADE;
+#                    SELECT {distinct_str} {keep_str}
+#                    INTO {temp_tb}
+#                    FROM {sc}.{tb}
+#                    WHERE {filt_str}
+#                          {tweez_str};
+#                    ''').format(keep_str=keep_str, sc=sc, tb=tb,
+#                                filt_str=filt_str, tweez_str=tweez_str,
+#                                distinct_str=distinct_str, temp_tb=temp_tb)
+#        if verbose:
+#            print(exec_str)
+#        exec_sql(exec_str, db=db)
+#        df = pd.read_sql_table(temp_tb, engine, schema='public')
+#
+#        exec_sql('DROP TABLE {};'.format(temp_tb), db=db)
+#
+#    else:
+#        df = pd.read_sql_table(tb, engine, schema=sc)
+#        if keep:
+#            df = df.loc[:, keep]
+#
+#        if distinct:
+#            df = df.drop_duplicates()
+#
+#    if copy:
+#        copy_table_structure(sc=copy, tb=tb, sc0=sc, db=db, verbose=verbose)
+##        exec_str = ('''
+##                    DROP TABLE IF EXISTS {sc}.{tb} CASCADE;
+##                    CREATE TABLE {sc}.{tb} (LIKE {sc0}.{tb} INCLUDING ALL);
+##                    ''').format(sc=copy, tb=tb, sc0=sc)
+##        if verbose:
+##            print(exec_str)
+##        exec_sql(exec_str, db=db)
+#        write_sql(df, db, copy, tb, 'append')
+#
+#    if drop:
+#        df = df.drop(drop, axis=1)
+#
+#    engine.dispose()
+#
+#    return df
+
+
+
+def read_sql(db=None, sc=None, tb=None, filt=False, filt_func=False, drop=False, keep=False,
+             copy=False, tweezer=False, distinct=False, verbose=False,
+             engine=None):
     '''
     Keyword arguments:
     tweezer -- list; filter (exclude or include) single combinations of values
@@ -346,8 +480,12 @@ def read_sql(db, sc, tb, filt=False, filt_func=False, drop=False, keep=False,
                                     ({'nd': 'FR0', 'bool_out': False}, ' NOT ')]
     '''
 
-    engine = create_engine(get_config('sql_connect')['sqlalchemy']
-                           .format(db=db))
+    if not engine:
+        sqlc = sql_connector(db)
+        _engine = sqlc.get_sqlalchemy_engine()
+    else:
+        _engine = engine
+
 
     if verbose:
         print('Reading ' + sc + '.' + tb +  ' from database ' + db)
@@ -366,9 +504,6 @@ def read_sql(db, sc, tb, filt=False, filt_func=False, drop=False, keep=False,
     # filtering through sql
     if filt:
 
-        temp_tb = ('temp_read_sql_filtered_'
-                   + ''.join(random.choice(string.ascii_lowercase)
-                             for _ in range(10)))
         if not filt_func:
             filt_func = {}
 
@@ -376,24 +511,22 @@ def read_sql(db, sc, tb, filt=False, filt_func=False, drop=False, keep=False,
         keep_str = ', '.join(keep) if keep else '*'
         filt_str = assemble_filt_sql(filt, filt_func)
         exec_str = ('''
-                    DROP TABLE IF EXISTS {temp_tb} CASCADE;
                     SELECT {distinct_str} {keep_str}
-                    INTO {temp_tb}
                     FROM {sc}.{tb}
                     WHERE {filt_str}
                           {tweez_str};
                     ''').format(keep_str=keep_str, sc=sc, tb=tb,
                                 filt_str=filt_str, tweez_str=tweez_str,
-                                distinct_str=distinct_str, temp_tb=temp_tb)
+                                distinct_str=distinct_str)
         if verbose:
             print(exec_str)
-        exec_sql(exec_str, db=db)
-        df = pd.read_sql_table(temp_tb, engine, schema='public')
 
-        exec_sql('DROP TABLE {};'.format(temp_tb), db=db)
+        cols = keep if keep else get_sql_cols(tb, sc, db)
+
+        df = pd.DataFrame(exec_sql(exec_str, db=db), columns=cols)
 
     else:
-        df = pd.read_sql_table(tb, engine, schema=sc)
+        df = pd.read_sql_table(tb, _engine, schema=sc)
         if keep:
             df = df.loc[:, keep]
 
@@ -402,19 +535,13 @@ def read_sql(db, sc, tb, filt=False, filt_func=False, drop=False, keep=False,
 
     if copy:
         copy_table_structure(sc=copy, tb=tb, sc0=sc, db=db, verbose=verbose)
-#        exec_str = ('''
-#                    DROP TABLE IF EXISTS {sc}.{tb} CASCADE;
-#                    CREATE TABLE {sc}.{tb} (LIKE {sc0}.{tb} INCLUDING ALL);
-#                    ''').format(sc=copy, tb=tb, sc0=sc)
-#        if verbose:
-#            print(exec_str)
-#        exec_sql(exec_str, db=db)
         write_sql(df, db, copy, tb, 'append')
 
     if drop:
         df = df.drop(drop, axis=1)
 
-    engine.dispose()
+    if not engine:
+        _engine.dispose()
 
     return df
 
@@ -463,18 +590,18 @@ coldict = {
            'sy': ('SMALLINT', '{sc}.tm_soy(sy)'),
            'hy': ('SMALLINT', '{sc}.hoy_soy(hy)'),
            'pp_id': ('SMALLINT', '{sc}.def_plant(pp_id)'),
-           'pp': ('VARCHAR(10)', '{sc}.def_plant(pp)'),
+           'pp': ('VARCHAR', '{sc}.def_plant(pp)'),
            'pt_id': ('SMALLINT', '{sc}.def_pp_type(pt_id)'),
-           'pt': ('VARCHAR(20)', '{sc}.def_pp_type(pt)'),
+           'pt': ('VARCHAR', '{sc}.def_pp_type(pt)'),
            'ca_id': ('SMALLINT', '{sc}.def_encar(ca_id)'),
            'wk_id': ('SMALLINT', '{sc}.def_week(wk_id)'),
            'value': ('DOUBLE PRECISION',),
            'mt_id': ('SMALLINT', '{sc}.def_month(mt_id)'),
            'month': ('VARCHAR',),
            'fl_id': ('SMALLINT', '{sc}.def_fuel(fl_id)'),
-           'fl': ('VARCHAR(20)', '{sc}.def_fuel(fl)'),
+           'fl': ('VARCHAR', '{sc}.def_fuel(fl)'),
            'nd_id': ('SMALLINT', '{sc}.def_node(nd_id)'),
-           'nd': ('VARCHAR(10)', '{sc}.def_node(nd)'),
+           'nd': ('VARCHAR', '{sc}.def_node(nd)'),
            'nd_2_id': ('SMALLINT', '{sc}.def_node(nd_id)'),
            'bool_out': ('BOOLEAN',),
            'weight': ('SMALLINT',),
@@ -490,21 +617,26 @@ coldict = {
            'ndays': ('SMALLINT',),
            'season': ('VARCHAR',),
            'wom': ('SMALLINT',),
-           'pwrerg_cat': ('VARCHAR(3)',),
+           'pwrerg_cat': ('VARCHAR',),
            'run_id': ('SMALLINT', '{sc}.def_loop(run_id)'),
           }
 
-def get_coldict(sc, db, fk_include_missing=False):
+def get_coldict(sc=None, db=None, fk_include_missing=False):
     ''' Adding SQL schema name to foreign keys in coldict. '''
 
-    _coldict = {}
-    for kk, vv in coldict.items():
-        _val = tuple(ivv.format(sc=sc) for ivv in vv)
-        if len(_val) > 1:
-            if (not _val[1].split('.')[1].split('(')[0]
-                     in get_sql_tables(sc, db)):
-                _val = (_val[0],)
-        _coldict[kk] = [iv.format(sc) for iv in _val]
+
+    if sc:
+        _coldict = {}
+        for kk, vv in coldict.items():
+            _val = tuple(ivv.format(sc=sc) for ivv in vv)
+            if len(_val) > 1:
+                if (not _val[1].split('.')[1].split('(')[0]
+                         in get_sql_tables(sc, db)):
+                    _val = (_val[0],)
+            _coldict[kk] = [iv.format(sc) for iv in _val]
+    else:
+        _coldict = {col: [coltype[0]] for col, coltype in coldict.items()}
+
 
     return _coldict
 
@@ -512,7 +644,7 @@ def get_coldict(sc, db, fk_include_missing=False):
 def init_table(tb_name, cols, schema='public', ref_schema=None,
                pk=[], unique=[], appendix='', bool_auto_fk=False,
                bool_return=False, db=None, con_cur=None,
-               skip_if_exists=False):
+               skip_if_exists=False, warn_if_exists=False):
     '''
     Drop and re-initialize indexed table.
     Keyword arguments:
@@ -534,13 +666,46 @@ def init_table(tb_name, cols, schema='public', ref_schema=None,
                       and tb_name in get_sql_tables('log', 'fnnc'))
                  else False)
 
+
+    def warn_exists():
+
+        if warn_if_exists:
+
+            tb_exists = len(exec_sql('''
+                            SELECT table_name
+                            FROM information_schema.tables
+                            WHERE table_schema = \'{sc}\'
+                            AND table_name = \'{tb}\';
+                            '''.format(sc=schema, tb=tb_name), db=db)) > 0
+
+            if tb_exists:
+                exec_count = 'SELECT COUNT(*) FROM %s.%s'%(schema, tb_name)
+                len_tb = exec_sql(exec_count, db=db)[0][0]
+                input(
+'''
+~~~~~~~~~~~~~~~   WARNING:  ~~~~~~~~~~~~~~~~
+You are about to delete existing table %s.%s.
+The length is %d.
+
+Hit enter to proceed.
+'''%(schema, tb_name, len_tb))
+
+
+
+
     if _skip:
         print('Table {} in schema {} exists: skipping init.'.format(tb_name,
                                                                     schema))
     else:
 
+        warn_exists()
+
         # apply default data type and foreign key to the columns if not provided
         _coldict = get_coldict(ref_schema, db)
+
+        if not bool_auto_fk:
+            _coldict = {col: (typeref[0],)
+                        for col, typeref in _coldict.items()}
 
         _cols = []
         for icol in cols:
@@ -551,11 +716,6 @@ def init_table(tb_name, cols, schema='public', ref_schema=None,
                 icol_new = (*icol, *_coldict[icol[0]])
             elif len(icol) is 2:
                 icol_new = icol
-                if bool_auto_fk: # maybe there's a foreign key in _coldict, let's check
-                    icol_new += ((_coldict[icol[0]][1],)
-                                  if icol[0] in _coldict.keys()
-                                  and len(_coldict[icol[0]]) > 1
-                                  else tuple())
             else:
                 icol_new = icol # all there
             _cols.append(icol_new)
@@ -722,58 +882,58 @@ def filtered_aggregates(nbin=20,
 
 # %%
 
-def multijoin(tables, col_select, merge_cols, keep_cols, output_where):
-
-    '''
-    dict tables --- {0: ['schema', 'name', 'alias'], 1: ...,
-                     'out': ['schema', 'name']}
-    dict col_select = {0: ['column_1', ['column_2', 'AS alias']], 1: ...,
-                       'out': ['col_from_input']}
-    dict merge_cols = {0: [], # not relevant by definition
-                       1: ['col_1'], ...}
-    dict keep_cols = {0: ['variable', 'soy', 'node', 'node_2', 'encar',
-                     'year','power_transmission'],
-                     1: ['mc_node',],
-                     2: ['mc_node_2']}
-    list output_where = ['power_transmission <> 0']
-    '''
-
-    ntb = len(tables) - 1
-    exec_str = 'DROP TABLE IF EXISTS ' + '.'.join(tables['out']) + ';'
-    exec_str += ' WITH '
-    for itb in range(ntb):
-        exec_str += (tables[itb][2] +
-                     ' AS ( SELECT ' + slct_str(col_select[itb]) +
-                     ' FROM ' + '.'.join(tables[itb][:2]) + '), '
-                     )
-    exec_str += 'temp_mrg AS (SELECT '
-    for itb in range(0, ntb):
-        exec_str += slct_str(keep_cols[itb], pl=tables[itb][2] + '.')
-        exec_str += ', ' if (itb < ntb - 1) else ' '
-    exec_str += 'FROM ' + tables[0][2] + ' '
-    for itb in range(1, ntb):
-        exec_str += 'LEFT JOIN ' + tables[itb][2] + ' ON '
-
-        exec_str += on_str(merge_cols[itb], pl=tables[0][2],
-                                            pr=tables[itb][2])
-    exec_str += ') SELECT ' + slct_str(col_select['out'])
-    exec_str += ' INTO ' + '.'.join(tables['out'])
-    exec_str += ' FROM temp_mrg '
-    exec_str += (' WHERE ' + ' AND '.join(['(' + o + ')'
-                                           for o in output_where])
-                  if output_where != [] else '')
-
-    conn = pg.connect(get_config('sql_connect')['psycopg2']
-                      .format(db=get_config('sql_connect')['db']))
-    cur = conn.cursor()
-    cur.execute(exec_str)
-    conn.commit()
-    try:
-        cur.fetchall()
-    except:
-        print("No results")
-    conn.close()
-
+#def multijoin(tables, col_select, merge_cols, keep_cols, output_where):
+#
+#    '''
+#    dict tables --- {0: ['schema', 'name', 'alias'], 1: ...,
+#                     'out': ['schema', 'name']}
+#    dict col_select = {0: ['column_1', ['column_2', 'AS alias']], 1: ...,
+#                       'out': ['col_from_input']}
+#    dict merge_cols = {0: [], # not relevant by definition
+#                       1: ['col_1'], ...}
+#    dict keep_cols = {0: ['variable', 'soy', 'node', 'node_2', 'encar',
+#                     'year','power_transmission'],
+#                     1: ['mc_node',],
+#                     2: ['mc_node_2']}
+#    list output_where = ['power_transmission <> 0']
+#    '''
+#
+#    ntb = len(tables) - 1
+#    exec_str = 'DROP TABLE IF EXISTS ' + '.'.join(tables['out']) + ';'
+#    exec_str += ' WITH '
+#    for itb in range(ntb):
+#        exec_str += (tables[itb][2] +
+#                     ' AS ( SELECT ' + slct_str(col_select[itb]) +
+#                     ' FROM ' + '.'.join(tables[itb][:2]) + '), '
+#                     )
+#    exec_str += 'temp_mrg AS (SELECT '
+#    for itb in range(0, ntb):
+#        exec_str += slct_str(keep_cols[itb], pl=tables[itb][2] + '.')
+#        exec_str += ', ' if (itb < ntb - 1) else ' '
+#    exec_str += 'FROM ' + tables[0][2] + ' '
+#    for itb in range(1, ntb):
+#        exec_str += 'LEFT JOIN ' + tables[itb][2] + ' ON '
+#
+#        exec_str += on_str(merge_cols[itb], pl=tables[0][2],
+#                                            pr=tables[itb][2])
+#    exec_str += ') SELECT ' + slct_str(col_select['out'])
+#    exec_str += ' INTO ' + '.'.join(tables['out'])
+#    exec_str += ' FROM temp_mrg '
+#    exec_str += (' WHERE ' + ' AND '.join(['(' + o + ')'
+#                                           for o in output_where])
+#                  if output_where != [] else '')
+#
+#    conn = pg.connect(get_config('sql_connect')['psycopg2']
+#                      .format(db=get_config('sql_connect')['db']))
+#    cur = conn.cursor()
+#    cur.execute(exec_str)
+#    conn.commit()
+#    try:
+#        cur.fetchall()
+#    except:
+#        print("No results")
+#    conn.close()
+#
 
 # %%
 
@@ -909,76 +1069,77 @@ def joinon(db, new_col, on_col, tb_target, tb_source,
     return exec_str
 
 # %%
+# CONSIDERED OBSOLETE DUE TO MISSING DB ARGUMENT
 
-def filtered_histogram(nbin=50,
-                       input_table = ['public', 'temp_mrg'],
-                       input_select = ['value', 'constr', 'encar', 'node',
-                                       'year', 'value_mask', 'fuel_mask',
-                                       'encar_mask', 'variable_mask'],
-                       input_filter = ['value_mask <> 0'],
-                       column_histogram = 'value',
-                       histogram_sum_cols = ['value', 'value_mask'],
-                       out_table=['out_st_lp_analysis', 'filtered_tr_prices']):
-
-    nbin=50
-    input_table = ['public', 'temp_mrg']
-    input_select = ['value', 'constr', 'encar', 'node',
-                    'year', 'value_mask', 'fuel_mask',
-                    'encar_mask', 'variable_mask']
-    input_filter = ['value_mask <> 0']
-    column_histogram = 'value'
-    histogram_sum_cols = ['value', 'value_mask']
-    out_table=['out_st_lp_analysis', 'filtered_tr_prices']
-
-    exec_str = ('DROP TABLE IF EXISTS ' + '.'.join(out_table) + '; ')
-    exec_str += (' WITH ' + input_table[1] + '_filt AS (' +
-                 ' SELECT ' + slct_str(input_select) +
-                 ' FROM ' + '.'.join(input_table) +
-                 ' ), ')
-    excl_list = [column_histogram] + histogram_sum_cols
-    exec_str += ('val_min_max AS ( SELECT *, ' +
-                 ' MIN(' + column_histogram + ') OVER (PARTITION BY ' +
-                 slct_str(input_select, exclude=excl_list) +
-                 ') as min, ' +
-                 ' MAX(' + column_histogram + ') OVER (PARTITION BY ' +
-                 slct_str(input_select, exclude=excl_list) +
-                 ') as max, ' +
-                 ' COUNT(' + column_histogram + ') OVER (PARTITION BY ' +
-                 slct_str(input_select, exclude=excl_list) +
-                 ') as cnt ' +
-                 ' FROM ' + input_table[1] + '_filt' +
-                 '), ')
-    exec_str += ('val_min_max_filt AS ( SELECT * FROM val_min_max' +
-                 ((' WHERE ' + ' AND '.join(input_filter))
-                   if input_filter != [] else '') +
-                 ')')
-    exec_str += (' SELECT ' +
-                 slct_str(input_select, exclude=excl_list) +
-                 ', MIN(min), MAX(max), ' +
-                 ' width_bucket(' + column_histogram +
-                                ', min, max * 1.0000000001, ' +
-                                str(nbin) + ') as bucket,' +
-                 ' COUNT(*) AS freq, ' +
-                 ', '.join(['SUM(' + c + ') AS ' + c + '_sum'
-                            for c in histogram_sum_cols]))
-    exec_str += (' INTO ' + '.'.join(out_table) +
-                 ' FROM val_min_max_filt ' +
-                 ' GROUP BY bucket '
-                 + slct_str(input_select, exclude=excl_list, commas=[',',''])
-                 )
-
-    conn = pg.connect(get_config('sql_connect')['psycopg2']
-                      .format(db=get_config('sql_connect')['db']))
-    cur = conn.cursor()
-    cur.execute(exec_str)
-    conn.commit()
-    try:
-        cur.fetchall()
-    except:
-        print("No results")
-    conn.close()
-
-    return dt.read_sql('storage1', *out_table), exec_str
+#def filtered_histogram(nbin=50,
+#                       input_table = ['public', 'temp_mrg'],
+#                       input_select = ['value', 'constr', 'encar', 'node',
+#                                       'year', 'value_mask', 'fuel_mask',
+#                                       'encar_mask', 'variable_mask'],
+#                       input_filter = ['value_mask <> 0'],
+#                       column_histogram = 'value',
+#                       histogram_sum_cols = ['value', 'value_mask'],
+#                       out_table=['out_st_lp_analysis', 'filtered_tr_prices']):
+#
+#    nbin=50
+#    input_table = ['public', 'temp_mrg']
+#    input_select = ['value', 'constr', 'encar', 'node',
+#                    'year', 'value_mask', 'fuel_mask',
+#                    'encar_mask', 'variable_mask']
+#    input_filter = ['value_mask <> 0']
+#    column_histogram = 'value'
+#    histogram_sum_cols = ['value', 'value_mask']
+#    out_table=['out_st_lp_analysis', 'filtered_tr_prices']
+#
+#    exec_str = ('DROP TABLE IF EXISTS ' + '.'.join(out_table) + '; ')
+#    exec_str += (' WITH ' + input_table[1] + '_filt AS (' +
+#                 ' SELECT ' + slct_str(input_select) +
+#                 ' FROM ' + '.'.join(input_table) +
+#                 ' ), ')
+#    excl_list = [column_histogram] + histogram_sum_cols
+#    exec_str += ('val_min_max AS ( SELECT *, ' +
+#                 ' MIN(' + column_histogram + ') OVER (PARTITION BY ' +
+#                 slct_str(input_select, exclude=excl_list) +
+#                 ') as min, ' +
+#                 ' MAX(' + column_histogram + ') OVER (PARTITION BY ' +
+#                 slct_str(input_select, exclude=excl_list) +
+#                 ') as max, ' +
+#                 ' COUNT(' + column_histogram + ') OVER (PARTITION BY ' +
+#                 slct_str(input_select, exclude=excl_list) +
+#                 ') as cnt ' +
+#                 ' FROM ' + input_table[1] + '_filt' +
+#                 '), ')
+#    exec_str += ('val_min_max_filt AS ( SELECT * FROM val_min_max' +
+#                 ((' WHERE ' + ' AND '.join(input_filter))
+#                   if input_filter != [] else '') +
+#                 ')')
+#    exec_str += (' SELECT ' +
+#                 slct_str(input_select, exclude=excl_list) +
+#                 ', MIN(min), MAX(max), ' +
+#                 ' width_bucket(' + column_histogram +
+#                                ', min, max * 1.0000000001, ' +
+#                                str(nbin) + ') as bucket,' +
+#                 ' COUNT(*) AS freq, ' +
+#                 ', '.join(['SUM(' + c + ') AS ' + c + '_sum'
+#                            for c in histogram_sum_cols]))
+#    exec_str += (' INTO ' + '.'.join(out_table) +
+#                 ' FROM val_min_max_filt ' +
+#                 ' GROUP BY bucket '
+#                 + slct_str(input_select, exclude=excl_list, commas=[',',''])
+#                 )
+#
+#    conn = pg.connect(get_config('sql_connect')['psycopg2']
+#                      .format(db=get_config('sql_connect')['db']))
+#    cur = conn.cursor()
+#    cur.execute(exec_str)
+#    conn.commit()
+#    try:
+#        cur.fetchall()
+#    except:
+#        print("No results")
+#    conn.close()
+#
+#    return dt.read_sql('storage1', *out_table), exec_str
 
 
 # %% compare schemas
@@ -1007,7 +1168,7 @@ def compare_tables(db, list_sc, tb):
 
     if flag_tb_exist:
 
-        
+
         nsc, isc = list(enumerate(list_sc))[0]
         for nsc, isc in enumerate(list_sc):
 
@@ -1062,35 +1223,59 @@ def compare_tables(db, list_sc, tb):
 
 
 if __name__ == '__main__':
-    
+
     list_sc = ['out_cal_1', 'out_cal_test_lin']
     db = 'storage2'
     tb = 'profdmnd'
-    
+
     excl = ['profprice', 'profprice_soy', 'def_pp_type',
             'tm_soy_full', 'var_sy_pwr']
-    
+
     excl += [tb for tb in get_sql_tables(list_sc[0], db) if 'analysis' in tb]
     excl += [tb for tb in get_sql_tables(list_sc[0], db) if 'var_sy' in tb]
     excl += [tb for tb in get_sql_tables(list_sc[0], db) if 'prof' in tb]
-    
+
     for tb in [c for c in get_sql_tables(list_sc[0], db) if not c in excl]:
         print('*' * 30, tb, '*' * 30)
         dfcomp = compare_tables(db, list_sc, tb)
         dfcomp = dfcomp.loc[dfcomp['reldiff'] > 1e-5]#, ['nd_id', 'value_0', 'value_1', 'diff', 'reldiff']]
-    
-    
+
+
         if len(dfcomp) > 0:
             print(dfcomp)
 
 
 # %%
 
-import subprocess
-from os import walk
+def dump_by_table_sh(sc, db, target_dir):
+
+    if __name__ == '__main__':
+        sc='out_replace_basesmall'
+        db='storage2'
+        source_base='/run/user/1000/gvfs/dav:host=drive.switch.ch,ssl=true,prefix=%2Fremote.php%2Fdav/files/martin.soini@unige.ch'
+        source_dir='SQL_DUMPS/out_replace_basesmall/'
+        target_dir=os.path.join(source_base, source_dir)
+
+    if not os.path.exists(target_dir):
+        os.makedirs(target_dir)
+
+    db_format = dict(user=config.PSQL_USER,
+                     pw=config.PSQL_PASSWORD,
+                     host=config.PSQL_HOST,
+                     port=config.PSQL_PORT,
+                     db=db)
+    dbname = 'postgresql://{user}:{pw}@{host}:{port}/{db}'.format(**db_format)
+
+
+
+    for itb in get_sql_tables(sc, db=db):
+        tb = sc + '.' + itb
+        fn = os.path.join(target_dir, itb + '.sql')
+        print('Dumping table ', itb, ' to file ', fn)
+        with open(fn, 'w+') as f:
+            pg_dump('--dbname', dbname, '--table', tb, _out=f)
 
 dbname = 'postgresql://postgres:postgres@localhost:5432/{db}'
-
 
 def dump_by_table(sc, db, target_dir='C:\\Users\\ashreeta\\Documents\\Martin\\SWITCHdrive\\SQL_DUMPS\\out_disagg_new\\'):
 
@@ -1101,42 +1286,71 @@ def dump_by_table(sc, db, target_dir='C:\\Users\\ashreeta\\Documents\\Martin\\SW
 
     exe = '\"C:\\Program Files\\PostgreSQL\\9.6\\bin\\pg_dump.exe\"'
 
-
     for itb in get_sql_tables(sc, db=db):
-        print('Now dumping table ', itb)
         tb = sc + '.' + itb
-        fn = target_dir + tb + '.sql'
+        fn = os.path.join(target_dir, tb + '.sql')
+        print('Dumping table ', itb, ' to ', fn)
         run_str = ('{exe} --table {tb} --dbname={dbname} > {fn}'
                        .format(exe=exe, tb=tb, dbname=dbname.format(db=db), fn=fn))
 
         subprocess.run(run_str, shell=True, check=True)
 
 
-def read_by_table(db,
-                  source_base='/run/user/1000/gvfs/dav:host=drive.switch.ch,ssl=true,prefix=%2Fremote.php%2Fwebdav/',
-                  source_dir=''):
+def read_by_table(db, sc,
+                  source_base='/run/user/1000/gvfs/dav:host=drive.switch.ch,ssl=true,prefix=%2Fremote.php%2Fdav/files/martin.soini@unige.ch',
+                  source_dir='', warn_reset_schema=True,
+                  patterns_only=False):
 
-    if __name__ == '__main__':
-        db='storage1'
-        source_base='/run/user/1000/gvfs/dav:host=drive.switch.ch,ssl=true,prefix=%2Fremote.php%2Fwebdav/'
-        source_dir='SQL_DUMPS/out_nucspreadvr_ext_it/'
+#    if __name__ == '__main__':
+#        print('main')
+#        db='storage2'
+#        source_base='/run/user/1000/gvfs/dav:host=drive.switch.ch,ssl=true,prefix=%2Fremote.php%2Fdav/files/martin.soini@unige.ch'
+#        source_dir='SQL_DUMPS/out_replace_vreseries/'
+
+
+    source_dir = os.path.join(source_base, source_dir)
+
 
     f = []
-    for (dirpath, dirnames, filenames) in walk(source_base + source_dir):
+    for (dirpath, dirnames, filenames) in walk(source_dir):
         f.extend(filenames)
         break
 
+    if patterns_only:
+        f = [fn for fn in f if any(pat in fn for pat in patterns_only)]
+
+
+    print('Reading from %s, %d files found.' % (source_dir, len(f)))
+
     exe = 'psql'
 
+    reset_schema(sc, db, warn=warn_reset_schema)
+
+    db_format = dict(user=config.PSQL_USER,
+                     pw=config.PSQL_PASSWORD,
+                     host=config.PSQL_HOST,
+                     port=config.PSQL_PORT,
+                     db=db)
+    dbname = 'postgresql://{user}:{pw}@{host}:{port}/{db}'.format(**db_format)
+
     for file in f:
-        print('Now reading file ', file)
-        fn = source_base + source_dir + file
+        print('Reading file ', file)
+        fn = source_dir + file
 
         run_str = '{exe} --dbname={dbname} < {fn}'.format(exe=exe, dbname=dbname, fn=fn)
         subprocess.run(run_str, shell=True, check=True)
 
 if __name__ == '__main__':
     pass
+
+#    source_dir = 'SQL_DUMPS/out_replace_emission/'
+#    sc = 'out_replace_emission'
+#    read_by_table(db, sc, source_dir=source_dir, warn_reset_schema=False,
+#                  patterns_only=['analysis_', 'def_', 'encar'])
+
 #    dump_by_table('out_marg_store', 'storage2', target_dir='C:\\Users\\ashreeta\\Documents\\Martin\\SWITCHdrive\\SQL_DUMPS\\out_marg_store_new\\')
+
+# %%
+
 
 
