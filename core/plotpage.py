@@ -837,6 +837,7 @@ class PlotTiled(PlotPage):
                     'sharex': False, 'sharey': False,
                     'val_axy': False,
                     'caption': True,
+                    'drop_nan_cols': True,
                     'draw_now': True,
                     'legend': 'page', #'plots', 'page', 'page_plots_all', 'page_all', 'page_plots', False
                    }
