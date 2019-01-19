@@ -1045,28 +1045,32 @@ class PlotTiled(PlotPage):
                  'bbox_to_anchor': (1, 1),
                  'fancybox': True, 'ncol': 1, 'shadow': False}
 
-        _df_lab = pd.DataFrame([c.replace('(', '').replace(')', '').split(', ')
-                                for c in self.pglgd_labels])
+        if not handles or not labels:
 
-        for icol in _df_lab.columns:
-            if len(_df_lab[icol].unique()) is 1:
-                _df_lab.drop(icol, axis=1, inplace=True)
-        self.pglgd_labels = _df_lab.apply(lambda x: '(' + ', '.join(x) + ')', axis=1).tolist()
+            _df_lab = pd.DataFrame([c.replace('(', '').replace(')', '').split(', ')
+                                    for c in self.pglgd_labels])
 
-        if 'all' in self.legend or not 'page' in self.legend:
-            # the second conditions means we are creating the legend
-            # after the initialization of the PlotTiled object!
-            handles = self.pglgd_handles
-            labels = self.pglgd_labels
-        else:
+            for icol in _df_lab.columns:
+                if len(_df_lab[icol].unique()) is 1:
+                    _df_lab.drop(icol, axis=1, inplace=True)
+            self.pglgd_labels = _df_lab.apply(lambda x: '(' + ', '.join(x) + ')', axis=1).tolist()
 
-            if slct_plot is None:
-                _slct_plot = self.current_plot
+            if 'all' in self.legend or not 'page' in self.legend:
+                # the second conditions means we are creating the legend
+                # after the initialization of the PlotTiled object!
+                handles = self.pglgd_handles
+                labels = self.pglgd_labels
             else:
-                _slct_plot = self.plotdict[slct_plot]
 
-            handles = handles if handles else _slct_plot.pltlgd_handles
-            labels = labels if labels else _slct_plot.pltlgd_labels
+                if slct_plot is None:
+                    _slct_plot = self.current_plot
+                else:
+                    _slct_plot = self.plotdict[slct_plot]
+
+                handles = handles if handles else _slct_plot.pltlgd_handles
+                labels = labels if labels else _slct_plot.pltlgd_labels
+
+        print('Adding handles, labels %s, %s'%(str(handles), str(labels)))
 
         self.axarr[0][0].legend(handles, labels, **legkw)
 
