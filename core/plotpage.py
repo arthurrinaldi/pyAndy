@@ -748,7 +748,7 @@ class PlotPage:
 
         axarr = self.pg_layout.pop('axarr')
 
-        if axarr is None:
+        if not isinstance(axarr, np.ndarray):
             self.fig, self.axarr = plt.subplots(nrows=ny, ncols=nx,
                                                 sharex=sharex,
                                                 sharey=sharey,
