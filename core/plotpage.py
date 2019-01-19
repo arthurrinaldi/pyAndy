@@ -1295,6 +1295,43 @@ class PlotTiled(PlotPage):
                  p, p.ax, nxyk[2]) for nxyk, p in self.plotdict.items()]
 
 
+    @staticmethod
+    def add_shared_label(text, ax1, ax2, axis='x', label_offset=0.1,
+                         twinax=False, rotation=None):
+        '''
+        Adds an x or y-label between two axes.
+        '''
+
+        label_pos1 = (0 if axis == 'y' and not twinax else 1,
+                      1 if axis == 'x' and twinax else 0)
+        label_pos2 = (1 if axis == 'y' and twinax else 0,
+                      0 if axis == 'x' and not twinax else 1)
+
+        if not twinax:
+            label_offset *= -1
+
+        label_pos = (0.5 * (ax1.transAxes.transform(label_pos1)
+                           + ax2.transAxes.transform(label_pos2)))
+        label_pos = ax1.transAxes.inverted().transform(label_pos)
+        label_pos[1 if not axis=='y' else 0] += label_offset
+
+        if axis == 'x':
+            ax1.set_xlabel(text)
+
+            ax1.xaxis.set_label_coords(*label_pos)
+
+            if rotation:
+                ax1.yaxis.label.set_rotation(rotation)
+
+        elif axis == 'y':
+            ax1.set_ylabel(text)
+
+            ax1.yaxis.set_label_coords(*label_pos)
+
+            if rotation:
+                ax1.yaxis.label.set_rotation(rotation)
+
+
 
 if __name__ == '__main__':
     pass
