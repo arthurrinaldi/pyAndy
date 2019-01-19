@@ -999,8 +999,11 @@ class BoxPlot(PlotsBase):
 
 
 
-def add_subplotletter(ax, n, ha='left', va='top', loc=(0, 1), offs=(5, -5), fs=15):
+def add_subplotletter(ax, n, ha='left', va='top', loc=(0, 1), offs=(5, -5), fs=None):
     list_abc = ['(%s)'%ii for ii in list('abcdefghijklmnopqrstuvwxyz')]
+
+    if not fs:
+        fs = ax.title.get_fontsize()
 
     t = ax.annotate(list_abc[n],
                     xy=loc, xycoords=ax.transAxes,
