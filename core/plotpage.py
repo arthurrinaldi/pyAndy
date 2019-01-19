@@ -245,8 +245,10 @@ class PlotPageData():
             setattr(self, iatt + '_lst', _ind_lst)
 
         # make sure post_filt is a list of lists
-        post_filt_lst = [f if type(f) is list else [f]
-                         for f in self.post_filt]
+        post_filt_lst = (self.post_filt
+                         if len(self.post_filt) > 0
+                             and isinstance(self.post_filt[0], list)
+                         else [self.post_filt])
 
         # ind_rel must only be added if relevant + not there yet
         for _ind_rel in self.ind_rel_lst:
