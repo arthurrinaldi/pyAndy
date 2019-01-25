@@ -53,11 +53,11 @@ class PlotPageData():
         The data attribute is implemented as property so we can
         call get_index_lists and order_data upon each assignment.
         '''
-        return self.__data
+        return self._data
 
     @data.setter
     def data(self, data):
-        self.__data = data
+        self._data = data
         self.get_index_lists()
         self.order_data()
 
@@ -112,7 +112,7 @@ class PlotPageData():
 
         self._from_sql = _from_sql
 
-        self.__data = None
+        self._data = None
 
         self.db = db
         self.ind_pltx = ind_pltx
@@ -364,14 +364,14 @@ class PlotPageData():
         dfpv = self.data_raw.pivot_table(**self._pv_kws, aggfunc=self.aggfunc)
         dfpv = pd.DataFrame(dfpv)
 
-        self.__data = dfpv.copy()
+        self._data = dfpv.copy()
 
         # make tuples out of column names
-        self.__data.columns = [tuple([c]) if type(c) != tuple else c
-                             for c in self.__data.columns]
+        self._data.columns = [tuple([c]) if type(c) != tuple else c
+                             for c in self._data.columns]
 
-        # apply scaling factors to __data, if applicable
-        self.__data = self.scale_data(self.__data)
+        # apply scaling factors to _data, if applicable
+        self._data = self.scale_data(self._data)
 
         # shouldn't this happen before calc_relative?
         self.calc_totals()  # calculate sums of selected series
@@ -379,10 +379,10 @@ class PlotPageData():
 #        bool_calc_rel = ((True if self.relto else False)
 #                          and (True if self.ind_rel else False))
 #        if bool_calc_rel:
-#            self.__data = self.calc_relative(self.__data)
+#            self._data = self.calc_relative(self._data)
 
         # set values below a certain threshold equal zero
-        self.__data = self.cut_threshold(self.__data)
+        self._data = self.cut_threshold(self._data)
 
         # sort series according to external list
         self.order_data()
@@ -421,15 +421,15 @@ class PlotPageData():
 
     def post_filtering(self):
         ''' Filters dataframe for certain values of ind_rel '''
-        self.__data = self.__data.loc[self.__data.index
+        self._data = self._data.loc[self._data.index
                                            .get_level_values(self.ind_rel)
                                            .isin(self.post_filt)]
 #        if len(self.post_filt) < 2:
-##            self.__data = self.__data.reset_index(self.ind_rel, drop=True)
+##            self._data = self._data.reset_index(self.ind_rel, drop=True)
 #        else:
-#            index = [c for c in self.__data.index.names
+#            index = [c for c in self._data.index.names
 #                     if not c in self.values + [self.ind_rel]]
-#            self.__data = (self.__data.reset_index()
+#            self._data = (self._data.reset_index()
 #                             .pivot_table(columns=self.ind_rel,
 #                                          index=index, values=self.values))
 
@@ -565,20 +565,20 @@ class PlotPageData():
         # special case: all columns
         for k, v in self.totals.items():
             if v == ['all']:
-                self.totals.update({k: [c[-1] for c in self.__data.columns]})
+                self.totals.update({k: [c[-1] for c in self._data.columns]})
 
         if len(self.totals) > 0:
             for totcol, sumcols in self.totals.items():
-                nc = len(self.__data.columns[0])
+                nc = len(self._data.columns[0])
                 newcol = tuple([''] * (nc - 1) + [totcol])
-                self.__data[newcol] = self.__data[[c for c
-                                                   in self.__data if c[-1]
+                self._data[newcol] = self._data[[c for c
+                                                   in self._data if c[-1]
                                                    in sumcols]].sum(axis=1)
 
     def _cols_to_list(self, ind, none_val=[(0,)]):
         ''' Returns a list of tuples of columns and or row indices. '''
         if not ind is None:
-            return (self.__data.reset_index()[ind].drop_duplicates()
+            return (self._data.reset_index()[ind].drop_duplicates()
                              .apply(lambda x: tuple(x), axis=1).tolist())
         else:
             return none_val
@@ -590,7 +590,7 @@ class PlotPageData():
             setattr(self, 'list_' + iind, self._cols_to_list(ind_list))
         self.list_ind_axy = self._cols_to_list(self.ind_axy, None)
 
-        self.list_series = self.__data.columns.unique().tolist()
+        self.list_series = self._data.columns.unique().tolist()
 
     def scale_data_raw(self, df):
 
@@ -622,18 +622,18 @@ class PlotPageData():
     def order_data(self):
         ''' order lowest column level by list self.series_order '''
         if self.series_order:
-            list_ord = [[idat for idat in self.__data.columns
+            list_ord = [[idat for idat in self._data.columns
                          if idat[-1] == iord]
                         for iord in self.series_order]
             list_ord = list(itertools.chain(*list_ord))
 
-            list_rest = [c for c in self.__data.columns if not c in list_ord]
+            list_rest = [c for c in self._data.columns if not c in list_ord]
 
             if list_rest:
-                data_rest = self.__data[list_rest]
+                data_rest = self._data[list_rest]
             else:
                 data_rest = pd.DataFrame()
-            self.__data = pd.concat([self.__data[list_ord], data_rest], axis=1)
+            self._data = pd.concat([self._data[list_ord], data_rest], axis=1)
 
 
     def replace_characters(self):
@@ -642,9 +642,9 @@ class PlotPageData():
 
         for chold, chnew in dict_char.items():
             # replace in columns:
-            self.__data.columns = [tuple([str(cc).replace(chold, chnew)
+            self._data.columns = [tuple([str(cc).replace(chold, chnew)
                                         for cc in c])
-                                 for c in self.__data.columns]
+                                 for c in self._data.columns]
 
         self.get_index_lists()
 
@@ -653,11 +653,11 @@ class PlotPageData():
         Returns index values corresponding to plots, i.e. w/out the axes.
         '''
 
-        select_levels = [ii for ii, nn in enumerate(self.__data.index.names)
+        select_levels = [ii for ii, nn in enumerate(self._data.index.names)
                          if not nn in self._ind_axx + self._ind_axy]
 
         return set([tuple(ii[i] for i in select_levels)
-                    for ii in self.__data.index.values
+                    for ii in self._data.index.values
                     if any([ss in ii for ss in select])])
 
     def copy(self):
@@ -669,7 +669,7 @@ class PlotPageData():
         ret = ('<%s.%s object at %s>' % (self.__class__.__module__,
                                          self.__class__.__name__,
                                          hex(id(self)))
-             + '\ndata: ' + str(self.__data.head())
+             + '\ndata: ' + str(self._data.head())
              + '\nind_pltx: %s' %self.ind_pltx
              + '\nind_plty: %s' %self.ind_plty
              + '\nind_axx: %s'%self.ind_axx
@@ -682,17 +682,17 @@ class PlotPageData():
     def __add__(self, other):
 
         # make sure the indices are compatible
-        if not self.__data.index.names == other.__data.index.names:
+        if not self._data.index.names == other._data.index.names:
             raise ValueError(
                 'Indices of PlotPageData objects to be added don\'t match.')
 
         # make sure all columns have the same number of elements
         if not (# all column name lengths of each must be equal
-                all([len(cc) == len(_do.__data.columns[0])
+                all([len(cc) == len(_do._data.columns[0])
                      for _do in [self, other]
-                     for cc in _do.__data.columns])
+                     for cc in _do._data.columns])
                 # length of first elements of the two must be equal
-                and len(self.__data.columns[0]) == len(other.__data.columns[0])):
+                and len(self._data.columns[0]) == len(other._data.columns[0])):
             raise ValueError(
                 'Inconsistent length of series elements names.')
 
@@ -700,13 +700,13 @@ class PlotPageData():
 
         # joining shaped data; sort must be False, otherwise the manually
         # defined series_order will be gone
-        do_add.__data = pd.concat([self.__data, other.__data], sort=False)
+        do_add._data = pd.concat([self._data, other._data], sort=False)
 
         do_add.data_raw = pd.concat([self.data_raw, other.data_raw],
                                     axis=0, sort=True)
 
-        do_add.__data.columns = [tuple([c]) if type(c) != tuple else c
-                               for c in do_add.__data.columns]
+        do_add._data.columns = [tuple([c]) if type(c) != tuple else c
+                               for c in do_add._data.columns]
 
         do_add.get_index_lists()
 
