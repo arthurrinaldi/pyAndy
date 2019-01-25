@@ -128,8 +128,8 @@ class PlotPageData():
                         sc = 'public', # database schema
 
                         relto=None,
-                        ind_rel='',
-                        reltype='',
+                        ind_rel=None,
+                        reltype=None,
 
                         name=None,
 
@@ -302,7 +302,7 @@ class PlotPageData():
             _ind_rel = [[_ind_rel] if not no_add_ind_rel else []][0]
             self._index += _ind_rel
 
-        self._index = [c for c in self._index if not c == '']
+        self._index = [c for c in self._index if not c in ('', None)]
 
         # if '_values' is in the index or the series index,
         # modify the data_raw_0 accordingly
@@ -591,7 +591,7 @@ class PlotPageData():
                                                    in self._data if c[-1]
                                                    in sumcols]].sum(axis=1)
 
-    def _cols_to_list(self, ind, none_val=[(0,)]):
+    def _cols_to_list(self, ind, none_val=[(None,)]):
         ''' Returns a list of tuples of columns and or row indices. '''
         if not ind is None:
             return (self._data.reset_index()[ind].drop_duplicates()
