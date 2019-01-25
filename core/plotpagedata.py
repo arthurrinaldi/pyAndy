@@ -675,12 +675,20 @@ class PlotPageData():
 
         return do_add
 
+
+
+
 if __name__ == '__main__':
 
+# %%
+
+    import grimsel.auxiliary.maps as maps
 
     sc_out = 'out_levels'
-    slct_nd = 'FR0'
+    slct_nd = 'DE0'
     db = 'storage2'
+
+    mps = maps.Maps(sc_out, db)
 
     ind_pltx = ['sta_mod']
     ind_plty = ['pwrerg_cat']
@@ -703,7 +711,6 @@ if __name__ == '__main__':
 #            ('swcadj_vl', ['adjs']),
             ('run_id', [0, -1]),
             ('wk_id', [5]),
-            ('dow', [5]),
             ('sta_mod', ['%model%', stats_data[slct_nd]], ' LIKE '),
             ('sta_mod', ['%model%'], ' LIKE '),
             ('pwrerg_cat', ['%pwr%'], ' LIKE '),
@@ -712,14 +719,55 @@ if __name__ == '__main__':
             ]
     post_filt = [] # from ind_rel
 
+    lst_series = aql.read_sql(db, sc_out, 'def_pp_type')['pt'].tolist()
+
+    dict_series_order = {'BAL': -100,
+                         'WAS': -50,
+                         'NUC': -75,
+                         'LIG': 10,
+                         'natural_gas': 40,
+                         'reservoir': 2000,
+                         'export': -200,
+                         'import': 1000,
+                         'run_of_river': -10
+                         }
+
+    df_series_order = aql.read_sql(db, sc_out, 'def_plant', keep=['pp', 'pt_id', 'nd_id', 'fl_id'])
+    df_series_order = df_series_order.join(aql.read_sql(db, sc_out, 'def_pp_type').set_index('pt_id')['pt'], on='pt_id')
+    df_series_order = df_series_order.join(aql.read_sql(db, sc_out, 'def_fuel').set_index('fl_id')['fl'], on='fl_id')
+    df_series_order = df_series_order.join(aql.read_sql(db, sc_out, 'def_node').set_index('nd_id')['nd'], on='nd_id')
+    df_series_order['pp_red'] = df_series_order.pp.apply(lambda x: x.split('_')[1])
+
+    df_series_order = df_series_order.loc[df_series_order.nd.isin([f for f in filt if 'nd' == f[0]][0][1])]
+
+    df_series_order['rank'] = np.inf
+
+    for icol in ['pp_red', 'pp_red', 'pt']:
+        df_order_dict = pd.DataFrame.from_dict(dict_series_order, columns=['rank_new'], orient='index')
+        df_order_dict.index.names = [icol]
+
+        df_series_order = df_series_order.join(df_order_dict, on=df_order_dict.index.names).fillna(1e10)
+
+        df_series_order['rank'] = df_series_order[['rank', 'rank_new']].min(axis=1)
+        df_series_order = df_series_order.drop('rank_new', axis=1)
+
+    series_order = df_series_order.sort_values(['rank', 'pp']).fl.unique().tolist()
+
     data_kw = {'filt': filt, 'post_filt': post_filt, 'data_scale': {'dmnd': -1},
                'totals': {'others': ['waste_mix']},
                'data_threshold': 1e-9, 'aggfunc': np.sum, 'harmonize': False,
-               }
+               'series_order': series_order}
 
     do = PlotPageData(db, ind_pltx, ind_plty, ind_axx, values, series,
-                      table, **data_kw)
+                            table, **data_kw)
 
+    do.data = do.data.fillna(0).applymap(float)
+
+    self = do
+
+# %%
+    # delete data aggregated in others
+    do.data = do.data.loc[:, ~do.data.columns.isin(do.totals['others'])]
 
 
 
