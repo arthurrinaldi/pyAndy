@@ -11,6 +11,8 @@ import pandas as pd
 import copy
 import itertools
 
+import inspect
+import wrapt
 
 import pyAndy.auxiliary.aux_sql_func as aql
 
@@ -59,6 +61,39 @@ class PlotPageData():
         self.get_index_lists()
         self.order_data()
 
+
+    @wrapt.decorator
+    def _attributes_to_lists(f, self, args, kwargs):
+        ''' Decorator to convert attributes to lists if they are not. '''
+
+        print('~'*90)
+        print(args, kwargs)
+        print('~'*90)
+
+        arg_names = inspect.getfullargspec(f).args[1:] # first is self
+        kwargs_args = dict(zip(arg_names, args))
+
+        kwargs.update(kwargs_args)
+
+        list_kws = ['ipx', 'ipy',
+                    'ind_pltx', 'ind_plty', 'ind_axx', 'values',
+                    'series', 'ind_axy']
+
+        for key, val in kwargs.items():
+            if key in list_kws:
+                if not type(val) in (tuple, list):
+                    kwargs[key] = [val] if val else []
+                elif isinstance(val, tuple):
+                    kwargs[key] = list(val)
+
+        print('+'*90)
+        print(kwargs)
+        print('+'*90)
+
+        return f(**kwargs)
+
+
+    @_attributes_to_lists
     def __init__(self, db='', ind_pltx=None, ind_plty=None, ind_axx=None,
                  values=None, series=None, table='', _from_sql=True, **kwargs):
         '''
@@ -521,6 +556,9 @@ class PlotPageData():
             raise ValueError(('calc_relative: The reference value %s '
                      + 'does not exist in ind_rel.') %self.relto)
 
+
+    @_attributes_to_lists
+    @_attributes_to_lists
     def calc_totals(self):
         ''' Calculate sums of selected data series. '''
 
