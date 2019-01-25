@@ -218,9 +218,13 @@ class PlotPageData():
 
     def get_data_raw(self):
 
+
+        keep = self._ind_ax_all + self._index + self.ind_rel_lst + self.series + self.values
+        keep = {ind for ind in keep if not ind in [None, '', '_name']}
+
         self.data_raw_0 = aql.read_sql(self.db, self.sc, self.table,
                                        filt=self.filt, tweezer=self.tweezer,
-                                       verbose=True)
+                                       verbose=True, keep=keep)
 
         self.data_raw_0 = self.data_raw_0.drop_duplicates()
 
