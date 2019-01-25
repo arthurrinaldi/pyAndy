@@ -88,15 +88,6 @@ class PlotsBase(metaclass=Meta):
     ''' Abstract class with basic plotting functionalities. '''
     def __init__(self, data, ax=None, *args, **kwargs):
 
-#        if not stacked:
-#            diag_data = pd.Series(data.ix[:, 0])
-#            data_2d = float('nan') * np.ones([len(diag_data), len(diag_data)])
-#            np.fill_diagonal(data_2d, diag_data)
-#
-#            self.data = pd.DataFrame(data_2d,
-#                                     index=data.index,
-#                                     columns=data.index)
-#        else:
         self.data = data
 
         if ax is None:
@@ -180,8 +171,6 @@ class PlotsBase(metaclass=Meta):
         self.generate_xpos(self.data)
         self.generate_colors()
         self.generate_opacity()
-#        self.generate_fonts()
-#        self.finalize_axis()
 
 
 
@@ -295,11 +284,6 @@ class PlotsBase(metaclass=Meta):
         labs = [str(series_name) + l if l != '' else '' for l in labs]
 
         for it in self.label_subset:
-#            lab = self.ax.text(self.xpos[it],
-#                         (offs[it] + self.loc_labels * y[it]),
-#                         labs[it], ha=self.label_ha, va='center',
-#                         rotation=self.label_angle)
-
 
             label_pos = (self.xpos[it], (offs[it] + self.loc_labels * y[it]))
             lab = self.ax.annotate(labs[it], xy=(0,0), xytext=label_pos,
@@ -514,13 +498,13 @@ class PlotPandas(PlotsBase):
     Makes use of the pandas plot method.
     This overwrites the gen_plot as we don't need to loop over series.
     '''
+
     def __init__(self, data, ax, pd_method, *args, **kwargs):
 
         self.on_values=True
 
         super(PlotPandas, self).__init__(data, ax, *args, **kwargs)
         self.pd_method = pd_method
-
 
     def gen_plot(self):
 
@@ -551,7 +535,6 @@ class PlotPandas(PlotsBase):
 
             kwargs.update(dict(rwidth=self.barwidth,
                                bins=self.bins))
-
 
         # all pandas plotting method
         _plotfunc(**kwargs)
@@ -670,6 +653,7 @@ class StackedBase(PlotsBase):
 class StackedArea(StackedBase):
     ''' Stacked area plot. '''
     def __init__(self, *args, **kwargs):
+
         super(StackedArea, self).__init__(*args, **kwargs)
 
     def gen_single_plot_series(self, ic, ic_name, ic_color, y):
