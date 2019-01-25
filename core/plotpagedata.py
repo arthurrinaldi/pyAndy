@@ -162,6 +162,8 @@ class PlotPageData():
 
     def update(self):
 
+        self._init_indices()
+
         if self._from_sql:
             print('Getting data from sql table %s.'%self.table)
             self.get_data_raw()
@@ -234,16 +236,7 @@ class PlotPageData():
             if len(lst_val) < 0.3 * len(df):
                 print(ic, len(lst_val))
 
-
-    def _prep_data(self):
-        '''
-        Read data from the table defined by the keyword argument table.
-        Returns a pivot table with layout
-        - row indices: ind_pltx, ind_plty, ind_axx
-        - columns: series
-        '''
-
-        self.print_counts_unique_values()
+    def _init_indices(self):
 
         # Series as is.
         # Is it still possible to have multiple values as series??
@@ -271,6 +264,18 @@ class PlotPageData():
             _ind = getattr(self, iatt)
             _ind_lst = _ind if type(_ind) is list else [_ind]
             setattr(self, iatt + '_lst', _ind_lst)
+
+
+
+    def _prep_data(self):
+        '''
+        Read data from the table defined by the keyword argument table.
+        Returns a pivot table with layout
+        - row indices: ind_pltx, ind_plty, ind_axx
+        - columns: series
+        '''
+
+        self.print_counts_unique_values()
 
         # make sure post_filt is a list of lists
         post_filt_lst = (self.post_filt
