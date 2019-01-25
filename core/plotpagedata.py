@@ -131,6 +131,7 @@ class PlotPageData():
                         ind_rel=None,
                         reltype=None,
 
+                        drop_nan_cols=True,
                         name=None,
 
                         aggfunc=np.sum,
