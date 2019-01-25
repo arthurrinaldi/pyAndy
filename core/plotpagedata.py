@@ -575,7 +575,102 @@ class PlotPageData():
 
 
     @_attributes_to_lists
+    def _merge_plt_indices(self, ipx, ipy):
+
+        index_slct = itertools.chain.from_iterable((ipx, ipy))
+
+        ind_mrg = tuple(ii for ii in index_slct
+                        if not ii is None)
+
+        return ind_mrg
+
     @_attributes_to_lists
+    def _get_data_by_index(self, ipx=(None,), ipy=(None,)):
+        ''' Return extracted data for a given index combination. '''
+
+        assert (len(ipx) is len(self.ind_pltx)) if self.ind_pltx else (len(ipx) == 1 and ipx[0] == None)
+        assert (len(ipy) is len(self.ind_plty)) if self.ind_plty else (len(ipy) == 1 and ipy[0] == None)
+
+        return self.data.loc[self._merge_plt_indices(ipx, ipy)]
+
+    def __getitem__(self, ind):
+        ''' Returns slice of self.data based on index selection. '''
+
+        ipx, ipy = ind
+
+
+        if not self._merge_plt_indices(ipx, ipy) in self.data.index:
+
+            raise KeyError('ipx = %s, ipy = %s is not in the index'%(ipx, ipy))
+
+        return self._get_data_by_index(*ind)
+
+
+    def remove_nan_cols(self, df):
+        '''
+        Drop data columns which are nan only.
+
+        This is relevant for PlotPageData objects resulting from
+        addition.
+        '''
+
+        if self.drop_nan_cols:
+            return df.loc[:, ~df.isnull().all(axis=0)]
+        else:
+            return df
+
+
+    def get_data(self):
+
+        self._iter_ind = itertools.product(enumerate(self.list_ind_pltx),
+                                           enumerate(self.list_ind_plty))
+
+        def flatten(ind): return tuple(itertools.chain.from_iterable(ind))
+        self._iter_ind = list(ind for ind in map(flatten, self._iter_ind))
+
+
+        data_list = []
+
+        for npx, ipx, npy, ipy in self._iter_ind:
+            try:
+                data_list.append(tuple([npx, ipx, npy, ipy,
+                                        self.remove_nan_cols(self[ipx, ipy])]))
+            except KeyError: continue
+
+        return data_list
+
+
+
+    def __iter__(self):
+        '''
+        Sets up combinations of plot indices.
+        '''
+
+        self._iter_ind = itertools.product(enumerate(self.list_ind_pltx),
+                                           enumerate(self.list_ind_plty))
+
+        def flatten(ind): return tuple(itertools.chain.from_iterable(ind))
+        self._iter_ind = (ind for ind in map(flatten, self._iter_ind))
+
+        return self
+
+    def __next__(self):
+
+        npx, ipx, npy, ipy = self._iter_ind.__next__()
+
+        try:
+            return tuple([npx, ipx, npy, ipy, self[ipx, ipy]])
+
+        except KeyError:
+            self.__next__()
+
+
+    def get_plot_nxy(self):
+        ''' Return size of plot array. '''
+
+        return (len(self.list_ind_pltx),
+                len(self.list_ind_plty))
+
     def calc_totals(self):
         ''' Calculate sums of selected data series. '''
 
