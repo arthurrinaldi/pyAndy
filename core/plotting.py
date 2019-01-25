@@ -37,7 +37,6 @@ def new_update(self, props):
     are provided. This allows us to construct
     plots with arbitrary input parameters, of which the meaningless ones get
     ignored.
-    Note that this might be a terribly bad idea.
     '''
 
     def _update_property(self, k, v):

@@ -78,18 +78,12 @@ class PlotTiled(PlotPage):
 
         self.pltpgdata = pltpgdata
 
-        # good to have a copy
-        self.list_ind_pltx = self.pltpgdata.list_ind_pltx.copy()
-        self.list_ind_plty = self.pltpgdata.list_ind_plty.copy()
-
-        self.axarr = []
+        self.nx, self.ny = self.pltpgdata.get_plot_nxy()
 
         defaults = {
                     'kind_def': 'LinePlot',
                     'kind_dict': {},
                     'plotkwargsdict': {},
-                    'nx': len(self.list_ind_pltx),
-                    'ny': len(self.list_ind_plty),
                     'sharex': False, 'sharey': False,
                     'val_axy': False,
                     'caption': True,
@@ -103,21 +97,20 @@ class PlotTiled(PlotPage):
                 setattr(self, key, kwargs[key])
                 kwargs.pop(key)
 
-        # will hold all generated plots
         self.plotdict = {}
+        self.posdict = {} # dict containing plot locations in the grid
 
-        # dict containing plot locations in the grid
-        self.posdict = {}
+# TODO: MOVE LEGEND LOGIC ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
         self.pglgd_handles = []
         self.pglgd_labels = []
-
 
         self.legend = ('none' if not self.legend
                        else ('page' if not type(self.legend) is str
                              else self.legend))
 
-        # set up plotpage
+# TODO: MOVE LEGEND LOGIC ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
         if self.draw_now:
             # Produce an actual figure
             kws = dict(nx=self.nx, ny=self.ny,
@@ -135,13 +128,14 @@ class PlotTiled(PlotPage):
 
         # left-over kwargs are for plots
         self.plotkwargs = kwargs
-        self.add_default_xylabel()
+        self._init_default_xylabel()
 
         # get full dictionary plot type --> columns
         self.gen_kind_dict()
 
 
         self.ax_loop()
+
 
         if self.draw_now:
             self.draw_plots()
@@ -154,10 +148,14 @@ class PlotTiled(PlotPage):
             pp.savefig(fig)
 
         fig.savefig(name + '.svg')
-        cmd = 'inkscape --file {f}.svg --export-emf {f}.emf'.format(f=name)
-        cmd = cmd.split(' ')
-        subprocess.run(cmd)
+        fig.savefig(name + '.png')
 
+        try:
+            cmd = 'inkscape --file {f}.svg --export-emf {f}.emf'.format(f=name)
+            cmd = cmd.split(' ')
+            subprocess.run(cmd)
+        except:
+            pass
 
     @classmethod
     def concat(cls, concat_list, concat_dir='y',
@@ -268,16 +266,16 @@ class PlotTiled(PlotPage):
         if 'page' in self.legend:
             self.add_page_legend()
 
-    def add_default_xylabel(self):
+    def _init_default_xylabel(self):
         '''
         Modify the plot kwargs x/ylabel param if no value is provided.
         '''
 
-        for xy in list('xy'):
+        for xy in 'xy':
 
             lab = '%slabel'%xy
-            no_inp = (not lab in self.plotkwargs.keys() or
-                      (lab in self.plotkwargs.keys()
+            no_inp = (not lab in self.plotkwargs or
+                      (lab in self.plotkwargs
                        and self.plotkwargs[lab] in [False, None]))
 
             if no_inp:
@@ -333,28 +331,28 @@ class PlotTiled(PlotPage):
         Note: input arg kind_dict is of shape {'series_element': 'kind0', ...}
         '''
 
+        cols = self.pltpgdata.data.columns
+
         # flatten column names
-        cols_all_items = set([cc for c in self.pltpgdata.data.columns
-                              for cc in c])
+        cols_all_items = set([cc for c in cols for cc in c])
 
         # default map: columns -> default type
-        kind_dict_cols = {kk: self.kind_def
-                          for kk in self.pltpgdata.data.columns}
+        kind_dict_cols = {kk: self.kind_def for kk in cols}
 
         # update using the kind_dict entries corresponding to single elements
         dct_update = {kk: vv for kk, vv in self.kind_dict.items()
-                      if kk in cols_all_items
-                      or kk in self.pltpgdata.data.columns}
-        dct_update = {cc: [vv for kk, vv in dct_update.items() if kk in cc or kk == cc][0]
-                       for cc in self.pltpgdata.data.columns
-                       if any([c in cc or c == cc for c in dct_update.keys()])}
+                      if kk in cols_all_items or kk in cols}
+        dct_update = {cc: [vv for kk, vv in dct_update.items()
+                           if kk in cc or kk == cc][0] for cc in cols
+                      if any([c in cc or c == cc
+                              for c in dct_update.keys()])}
         kind_dict_cols.update(dct_update)
 
         # update using the kind_dict entries corresponding to specific columns
         dct_update = {kk: vv for kk, vv in self.kind_dict.items()
-                      if kk in self.pltpgdata.data.columns}
+                      if kk in cols}
         dct_update = {cc: [vv for kk, vv in dct_update.items() if kk in cc][0]
-                       for cc in self.pltpgdata.data.columns
+                       for cc in cols
                        if any([c in cc for c in dct_update.keys()])}
         kind_dict_cols.update(dct_update)
 
@@ -363,9 +361,7 @@ class PlotTiled(PlotPage):
                              if kind_dict_cols[v] == k]
                          for k in list(set(kind_dict_cols.values()))}
 
-        print(kind_dict_rev)
-
-        self.kind_dict_cols = kind_dict_rev
+        self._kind_dict_cols = kind_dict_rev
 
 
 
@@ -381,6 +377,7 @@ class PlotTiled(PlotPage):
         #   update ax!
         #   call plot method gen_plot_series
         #   do legend stuff
+
 
     def gen_plot(self, data_slct, ipltxy, kind):
         ''' Generate plots of the selected kind. Also adds axis labels and
@@ -401,8 +398,7 @@ class PlotTiled(PlotPage):
 
         # check whether plotting contains a dedicated class for this
         # plot kind; if yes, create an instance. ...
-            print(lpplt.__dict__.keys())
-        elif kind in lpplt.__dict__.keys():
+        elif hasattr(lpplt, kind):
             print(self._plotkwargs)
 
             kwargs = dict(data=data_slct, ax=ax, **self._plotkwargs, **no_draw)
@@ -437,90 +433,71 @@ class PlotTiled(PlotPage):
         Loops over
         - axis columns
         - axis rows
-        - plot types as defined in self.kind_dict_cols
+        - plot types as defined in self._kind_dict_cols
         Selects data for the corresponding subplot/type and calls gen_plot.
         '''
-        for ipltx, slct_ipltx in enumerate(self.list_ind_pltx):
-            for iplty, slct_iplty in enumerate(self.list_ind_plty):
 
-                index_slct = tuple(([*slct_ipltx]
-                                    if not self.pltpgdata.ind_pltx is None else [])
-                                 + ([*slct_iplty]
-                                    if not self.pltpgdata.ind_plty is None else []))
+        for ipltx, slct_ipltx, iplty, slct_iplty, data_slct_0 in self.pltpgdata.get_data():
+
+            pass
+
+            data_slct_0 = pd.DataFrame(data_slct_0)
 
 
-                if index_slct in self.pltpgdata.data.index or index_slct == tuple():
 
-                    print('index_slct', index_slct)
-                    data_slct_0 = pd.DataFrame(self.pltpgdata.data.loc[index_slct])
-                    data_slct_0 = self.remove_nan_cols(data_slct_0)
-
-                    # plot-specific updates of plotkwargs
-                    # 1. parameters from provided plotkwargsdict
-                    self._plotkwargs = self.plotkwargs.copy()
-                    if index_slct in self.plotkwargsdict.keys():
-                        upd = self.plotkwargsdict[index_slct]#{kk: vv for kk, vv
+            index_slct = self.pltpgdata._merge_plt_indices(slct_ipltx, slct_iplty)
+            # plot-specific updates of plotkwargs
+            # 1. parameters from provided plotkwargsdict
+            self._plotkwargs = self.plotkwargs.copy()
+            if index_slct in self.plotkwargsdict.keys():
+                upd = self.plotkwargsdict[index_slct]#{kk: vv for kk, vv
 #                               in self.plotkwargsdict[index_slct].items()
 #                               if kk in self.plotkwargs.keys()}
-                        self._plotkwargs.update(upd)
-                        print(upd)
-                    else:
-                        print('not in pkwd.')
-                    # 2. title
-                    if (not 'title' in self._plotkwargs.keys()) \
-                        or ('title' in self._plotkwargs.keys()
-                            and self._plotkwargs['title'] in [False, None]):
+                self._plotkwargs.update(upd)
+                print(upd)
+            else:
+                print('not in pkwd.')
+            # 2. title
+            if (not 'title' in self._plotkwargs.keys()) \
+                or ('title' in self._plotkwargs.keys()
+                    and self._plotkwargs['title'] in [False, None]):
 
-                        self._plotkwargs['title'] = \
-                            '{}\n{}'.format(str(slct_ipltx),
-                                            str(slct_iplty))
-                    # 3. plotkwargs know where they are located
-                    self._plotkwargs['gridpos'] = (ipltx, iplty)
+                self._plotkwargs['title'] = \
+                    '{}\n{}'.format(str(slct_ipltx),
+                                    str(slct_iplty))
+            # 3. plotkwargs know where they are located
+            self._plotkwargs['gridpos'] = (ipltx, iplty)
 
 
-                    for kind in self.kind_dict_cols.keys():
-                        print(kind)
-                        col_subset = [c for c in data_slct_0.columns
-                                      if c in self.kind_dict_cols[kind]]
+            kind, kind_cols = list(self._kind_dict_cols.items())[0]
+            for kind, kind_cols in self._kind_dict_cols.items():
 
-                        if col_subset:
+                col_subset = [c for c in data_slct_0.columns if c in kind_cols]
 
-                            print('Plotting ', index_slct, self.pltpgdata.ind_pltx,
-                                                           self.pltpgdata.ind_plty,
-                                                           kind)
+                if not col_subset:
+                    continue
 
-                            data_slct = data_slct_0[col_subset]
+                print('Plotting ', kind, index_slct,
+                      self.pltpgdata.ind_pltx, self.pltpgdata.ind_plty)
 
-                            _indx_drop = [ii for ii in data_slct.index.names
-                                          if not ii
-                                          in self.pltpgdata._ind_ax_all]
+                data_slct = data_slct_0[col_subset]
 
-                            if _indx_drop:
-                                data_slct.reset_index(_indx_drop, drop=True,
-                                                      inplace=True)
-                            ipltxy = [ipltx, iplty]
-                            self.gen_plot(data_slct, ipltxy, kind)
+                _indx_drop = [ii for ii in data_slct.index.names
+                              if not ii in self.pltpgdata._ind_ax_all]
+                if _indx_drop:
+                    data_slct.reset_index(_indx_drop, drop=True, inplace=True)
 
-                            self.plotdict[slct_ipltx, slct_iplty, kind] = self.current_plot
-                            self.posdict[slct_ipltx, slct_iplty] = (ipltx, iplty)
+                ipltxy = [ipltx, iplty]
+                self.gen_plot(data_slct, ipltxy, kind)
 
-                if str.find(self.legend, 'plots') > -1:
-                    self.axarr[ipltx][iplty].legend(\
-                              self.current_plot.pltlgd_handles,
-                              self.current_plot.pltlgd_labels)
+                self.plotdict[slct_ipltx, slct_iplty, kind] = self.current_plot
+                self.posdict[slct_ipltx, slct_iplty] = (ipltx, iplty)
 
-    def remove_nan_cols(self, df):
-        '''
-        Drop data columns which are nan only.
+        if str.find(self.legend, 'plots') > -1:
+            self.axarr[ipltx][iplty].legend(\
+                      self.current_plot.pltlgd_handles,
+                      self.current_plot.pltlgd_labels)
 
-        This is relevant for PlotPageData objects resulting from
-        addition.
-        '''
-
-        if self.drop_nan_cols:
-            return df.loc[:, -df.isnull().all(axis=0)]
-        else:
-            return df
 
     def _gen_caption_string(self):
         '''
@@ -599,9 +576,148 @@ class PlotTiled(PlotPage):
             if rotation:
                 ax1.yaxis.label.set_rotation(rotation)
 
-
+# %%
 
 if __name__ == '__main__':
-    pass
+
+    import grimsel.auxiliary.maps as maps
+
+    from pyAndy import PlotPageData
+
+    sc_out = 'out_levels'
+    slct_nd = 'DE0'
+    db = 'storage2'
+
+    mps = maps.Maps(sc_out, db)
+
+    ind_pltx = ['sta_mod']
+    ind_plty = ['pwrerg_cat']
+    ind_axx = ['sy']
+    values = ['value_posneg']
+
+    series = ['bool_out', 'fl']
+    table = sc_out + '.analysis_time_series'
+
+
+    stats_data = {'DE0': '%agora%',
+                  'FR0': '%eco2%',
+                  'CH0': '%entsoe%'}
+
+    filt = [
+            ('nd', [slct_nd]),
+            ('swfy_vl', ['yr2015', 'nan'], ' LIKE '),
+#            ('fl', ['%nuclear%'], ' LIKE '),
+#            ('swchp_vl', ['chp_off']),
+#            ('swcadj_vl', ['adjs']),
+            ('run_id', [0, -1]),
+#            ('wk_id', [5]),
+            ('sta_mod', ['%model%', stats_data[slct_nd]], ' LIKE '),
+#            ('sta_mod', ['%model%'], ' LIKE '),
+            ('pwrerg_cat', ['%pwr%'], ' LIKE '),
+            ('fl', ['dmnd', '%coal%', '%nuc%', '%lig%', '%gas', 'load_prediction_d',
+                    'wind_%', '%photo%', '%bio%', 'lost%', 'dmnd_flex'], ' LIKE ')
+            ]
+    post_filt = [] # from ind_rel
+
+    lst_series = aql.read_sql(db, sc_out, 'def_pp_type')['pt'].tolist()
+
+    dict_series_order = {'BAL': -100,
+                         'WAS': -50,
+                         'NUC': -75,
+                         'LIG': 10,
+                         'natural_gas': 40,
+                         'reservoir': 2000,
+                         'export': -200,
+                         'import': 1000,
+                         'run_of_river': -10
+                         }
+
+    df_series_order = aql.read_sql(db, sc_out, 'def_plant', keep=['pp', 'pt_id', 'nd_id', 'fl_id'])
+    df_series_order = df_series_order.join(aql.read_sql(db, sc_out, 'def_pp_type').set_index('pt_id')['pt'], on='pt_id')
+    df_series_order = df_series_order.join(aql.read_sql(db, sc_out, 'def_fuel').set_index('fl_id')['fl'], on='fl_id')
+    df_series_order = df_series_order.join(aql.read_sql(db, sc_out, 'def_node').set_index('nd_id')['nd'], on='nd_id')
+    df_series_order['pp_red'] = df_series_order.pp.apply(lambda x: x.split('_')[1])
+
+    df_series_order = df_series_order.loc[df_series_order.nd.isin([f for f in filt if 'nd' == f[0]][0][1])]
+
+    df_series_order['rank'] = np.inf
+
+    for icol in ['pp_red', 'pp_red', 'pt']:
+        df_order_dict = pd.DataFrame.from_dict(dict_series_order, columns=['rank_new'], orient='index')
+        df_order_dict.index.names = [icol]
+
+        df_series_order = df_series_order.join(df_order_dict, on=df_order_dict.index.names).fillna(1e10)
+
+        df_series_order['rank'] = df_series_order[['rank', 'rank_new']].min(axis=1)
+        df_series_order = df_series_order.drop('rank_new', axis=1)
+
+    series_order = df_series_order.sort_values(['rank', 'pp']).fl.unique().tolist()
+
+    data_kw = {'filt': filt, 'post_filt': post_filt, 'data_scale': {'dmnd': -1},
+               'totals': {'others': ['waste_mix']},
+               'data_threshold': 1e-9, 'aggfunc': np.sum, 'harmonize': False,
+               'series_order': series_order}
+
+    do = PlotPageData(db, ind_pltx, ind_plty, ind_axx, values, series,
+                            table, **data_kw)
+
+    do.data = do.data.fillna(0).applymap(float)
+
+# %%
+    # delete data aggregated in others
+    do.data = do.data.loc[:, ~do.data.columns.isin(do.totals['others'])]
+
+
+
+    color=mps.get_color_dict(series[-1])
+    color.update({'other': '#ffffff',
+                  'others': '#ffffff',
+                  'other_negative': '#ffffff',
+                  'other_ren': '#ffffff',
+                  'DE_DMND': 'k',
+                  'CH_DMND': 'k',
+                  'co2_intensity': 'g',
+                  'hydro_total': color['reservoir'],
+                  'dmnd_flex': 'k',
+                  'biomass': color['bio_all'],
+                  'biogas': color['bio_all'],
+                  'natural_gas_cc': color['natural_gas'],
+                  'natural_gas_chp': color['natural_gas'],
+                  'natural_gas_others': color['natural_gas'],
+                  'natural_gas_turbines': color['natural_gas'],
+                  'pumped_hydro_pumping': color['pumped_hydro'],
+                  'load_prediction_d': color['dmnd']},)
+
+    color.update({sr[-1]: 'k' for sr in do.data.columns if not sr[-1] in color})
+
+    #color = False
+
+    layout_kw = {'left': 0.1, 'right': 0.875, 'wspace': 0.2, 'hspace': 0.2, 'bottom': 0.1, 'top': 0.8}
+    label_kw = {'label_format':False, 'label_subset':[-1], 'label_threshold':1e-6,
+                'label_ha': 'left'}
+    plot_kw = dict(kind_def='StackedArea',
+                   kind_dict={'CH_DMND': 'LinePlot',
+                                                      'dmnd': 'LinePlot',
+                                                      'total': 'LinePlot',
+                                                      'load_prediction_d': 'LinePlot'},
+                   stacked=True, on_values=True, sharex=True, sharey=True,
+                   colormap=color, barwidth=0.8, linewidth=1, edgecolor='black',
+                   reset_xticklabels=False, legend='a', marker='.', draw_now=True,
+                   ylabel='Power [MW]', step='mid'
+                   )
+
+
+
+
+    #with plt.style.context(('ggplot')):
+    plot = PlotTiled(do, **layout_kw, **label_kw, **plot_kw)
+
+    self = plot.plotdict[list(plot.plotdict)[0]]
+
+
+
+
+
+
 
 
