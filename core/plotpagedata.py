@@ -281,6 +281,13 @@ class PlotPageData():
 
         self.print_counts_unique_values()
 
+
+        try:
+            self.data_raw_0.loc[:, self.values] = self.data_raw_0.loc[:, self.values].astype(float)
+        except:
+            raise ValueError('Value columns %s could '%self.values
+                              + 'not be cast as float')
+
         # make sure post_filt is a list of lists
         post_filt_lst = (self.post_filt
                          if len(self.post_filt) > 0
