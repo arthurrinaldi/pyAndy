@@ -1,0 +1,12 @@
+# This file may be used to create an environment using:
+# $ conda create --name <env> --file <this file>
+# platform: linux-64
+matplotlib=2.2.3=py36hb69df0a_0
+numpy=1.15.1=py36h1d66e8a_0
+pandas=0.23.4=py36h04863e7_0
+psycopg2=2.7.6.1=py36h1ba5d50_0
+python=3.6.8=h0371630_0
+scipy=1.1.0=py36hfa4b5c9_1
+seaborn=0.9.0=py36_0
+sqlalchemy=1.2.11=py36h7b6447c_0
+wrapt=1.10.11=py36h14c3975_2
