@@ -2,6 +2,13 @@ OBSOLETE/
 *.pyc
 *.log
 
+# Sphinx stuff
+.build/
+conf.py 
+Makefile
+index.rst
+make.bat
+
 # Byte-compiled / optimized / DLL files
 __pycache__/
 *.py[cod]
