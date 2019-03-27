@@ -164,6 +164,7 @@ class PlotPageData():
             print('Getting data from DataFrame.')
         self._prep_data()
         self.get_index_lists()
+        self._init_iter_ind()
 
 
     def harmonize_indices(self, df):
@@ -370,7 +371,7 @@ class PlotPageData():
 
 
         # calculate pivot table
-        dfpv = self.data_raw.pivot_table(**self._pv_kws, aggfunc=self.aggfunc)
+        dfpv = self.data_raw.pivot_table(**self._pv_kws, aggfunc=self.aggfunc, dropna=False)
         dfpv = pd.DataFrame(dfpv)
 
         self._data = dfpv.copy()
@@ -612,7 +613,12 @@ class PlotPageData():
             return df
 
 
-    def get_data(self):
+    def _init_iter_ind(self):
+        '''
+        Initialized the instance attribute `_iter_ind`.
+
+        `_iter_ind` is a list of (x,y) tuples with all plot names.
+        '''
 
         self._iter_ind = itertools.product(enumerate(self.list_ind_pltx),
                                            enumerate(self.list_ind_plty))
@@ -620,6 +626,8 @@ class PlotPageData():
         def flatten(ind): return tuple(itertools.chain.from_iterable(ind))
         self._iter_ind = list(ind for ind in map(flatten, self._iter_ind))
 
+
+    def get_data(self):
 
         data_list = []
 
@@ -779,6 +787,9 @@ class PlotPageData():
              + '\nind_axx: %s'%self.ind_axx
              + '\nind_axy: %s'%self.ind_axy
              + '\nseries: %s'%self.series
+             + '\nind_rel: %s'%self.ind_rel
+             + '\nrelto: %s'%self.relto
+             + '\nreltype: %s'%self.reltype
              )
 
         return ret

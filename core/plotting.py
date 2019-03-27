@@ -23,12 +23,16 @@ import pandas as pd
 import numpy as np
 
 import matplotlib.pyplot as plt
+import matplotlib as mpl
+
 import matplotlib.patches as mpatches
 import matplotlib.ticker as mticker
 from matplotlib.transforms import Affine2D
 from matplotlib.collections import PathCollection
 
 import seaborn as sns
+
+from pyAndy.core.plotdata import PlotData
 
 def new_update(self, props):
     '''
@@ -84,22 +88,16 @@ class Meta(type):
             plt_inst.draw_plot()
         return plt_inst
 
-class PlotsBase(metaclass=Meta):
+class PlotsBase():#metaclass=Meta):
     ''' Abstract class with basic plotting functionalities. '''
-    def __init__(self, data, ax=None, *args, **kwargs):
 
-        self.data = data
+    def _update_serieskws(self, series_name=None):
+        '''
+        Updates the kwargs for the plot object.
 
-        if ax is None:
-
-            _, self.ax = plt.subplots(1,1)
-        else:
-            self.ax = ax
-
-        self.generate_c_list()
-
-        self.linedict = {}
-        self.list_y_offset = False
+        This is called for every series to adjust the properties.
+        (Exception: PlotPandas)
+        '''
 
         defaults = {'x_offset': 0,
                     'y_offset': False,
@@ -108,8 +106,10 @@ class PlotsBase(metaclass=Meta):
                     'on_values': False,
                     'bar': [1, 1],
                     'colormap': False,
+                    'linestyle': '-',
                     'colorpos': 'green',
                     'colorneg': 'red',
+                    'markersize': mpl.rcParams['lines.markersize'],
                     'opacitymap': 1,
                     'linewidth': None,
                     'width': False,
@@ -137,10 +137,10 @@ class PlotsBase(metaclass=Meta):
                     'offs_slct': False,
                     'bubble_scale': 1,
                     'edgewidth': 0,
-                    'barwidth': False,
+                    'barwidth': 0.9,
                     'barspace': False,
-                    'markersize': None,
                     'xticklabel_rotation': 90,
+
                     # for BoxPlot
                     'show_outliers': False,
                     'draw_now': True,
@@ -149,47 +149,178 @@ class PlotsBase(metaclass=Meta):
                     'seriesplotkws': {},
                     'step': 'post',
                     }
-        for key, val in defaults.items():
-            setattr(self, key, val)
-            if key in kwargs.keys():
-                setattr(self, key, kwargs[key])
-                kwargs.pop(key)
+
+
+        _kw_tot = dict()
+        if not series_name and not self.plotkwargs:
+            # initial parameter setting from non-dict-dict plotkwargs
+            _kw_tot.update(self.kwargs)
+
+        elif self.plotkwargs and not series_name:
+            # initial parameter setting from dict_dict plotkwargs
+            _kw_tot.update(self.plotkwargs[list(self.plotkwargs)[0]])
+            _kw_tot.update(self.kwargs)
+        elif self.plotkwargs and series_name:
+            # update to specific series_name
+            _kw_tot.update(self.plotkwargs[series_name])
+            _kw_tot.update(self.kwargs)
+        elif not self.plotkwargs and series_name:
+            # do nothing
+            pass
+
+        if self.plotkwargs or not series_name:
+            for key, val in defaults.items():
+                setattr(self, key, val)
+                if key in _kw_tot:
+                    setattr(self, key, _kw_tot[key])
+                    _kw_tot.pop(key)
+                if key in self.kwargs:
+                    self.kwargs.pop(key)
+
+
+
+    def __init__(self, data, ax=None, plotkwargs=None, *args, **kwargs):
+        '''
+        Plotkwargs are
+        '''
+
+        if ax is None:
+            _, self.ax = plt.subplots(1,1)
+        else:
+            self.ax = ax
+
+
+        self.linedict = {}
+        self.list_y_offset = False
+
+
+        print(plotkwargs)
+        if not plotkwargs:
+            # plotkwargs not provided
+            plotkwargs = {'__constant': kwargs.copy()}
+
+        print(plotkwargs)
+
+        self.plotkwargs = plotkwargs
+        self.kwargs = kwargs
+        self._update_serieskws()
+
+
+        self.plotdata = PlotData(data, self.stacked, self.on_values)
 
         if not self.label_subset:
-            self.label_subset = np.arange(len(self.data))
-
-        # what's left of kwargs is passed to the plotting functions
-        self.kwargs = kwargs
+            self.label_subset = np.arange(len(self.plotdata.data))
 
         # initialize legend handles and labels for the plot
-        self.reset_legend_handles_labels()
+        self.pltlgd_handles = self.pltlgd_labels = []
 
         self.ibar = self.nbar = 1
 
         self.labels = {} # dict of all label objects
 
-        self.generate_xpos(self.data)
         self.generate_colors()
         self.generate_opacity()
 
+        self.plotdata.init_xpos(barspace=self.barspace,
+                                ibar=self.ibar,
+                                nbar=self.nbar,
+                                x_offset=self.x_offset)
 
 
-    def set_gridpos(self, value):
+    def gen_plot(self):
+        '''
+        Loops over plot series.
+        '''
+
+        iic, ic = list(enumerate(self.plotdata.c_list))[0]
+        for iic, ic in enumerate(self.plotdata.c_list):
+
+            if ic in self.plotkwargs:
+                self._update_serieskws(ic)
+
+            y = self.plotdata.get_series_y(ic)
+            ic_color = self.plotdata.c_list_color[iic]
+
+            self.linedict[ic] = self.gen_single_plot_series(ic, iic,
+                                                            ic_color, y)
+
+            self.adapt_plot_series(y)
+
+
+
+    def _draw_data_labels(self, xpos=None):
+        '''
+        Adds labels to all plot series and selected x positions.
+
+        The series name if included in the label in all cases.
+        Label value formatting is set by the label_format attribute.
+        The label_subset is a list of integer x-axis locations selecting
+        the positions where a label is to be added.
+
+        Args:
+            xpos (iterable): x positions, set to default self.plotdata.xpos
+                             if the parameter is not set; StackedGroupedBar
+                             uses other values
+        '''
+
+        if xpos is None:
+            xpos = self.plotdata.xpos
+
+        for series, series_name in zip(self.plotdata.c_list,
+                                       self.plotdata.c_list_names):
+
+            y = self.plotdata.data[series].values
+
+            labs = [self.label_format.format(iy)
+                    if '{' in self.label_format.replace('{name}', '')
+                    else self.label_format%iy
+                    if abs(iy) > self.label_threshold else ''
+                    for iy in y]
+
+            if '{name}' in self.label_format:
+                labs = [l.format(name=str(series_name)) if l != '' else '' for l in labs]
+
+            offs = self.plotdata.data_offset[series].values
+
+            for it in self.label_subset:
+
+                label_pos = (xpos[it], (offs[it] + self.loc_labels * y[it]))
+
+                lab = self.ax.annotate(labs[it], xy=label_pos, xytext=label_pos,
+                                       xycoords='data',textcoords='data',
+                                       horizontalalignment=self.label_ha,
+                                       verticalalignment='center',
+                                       rotation=self.label_angle)
+
+                self.labels.update({(labs[it], it): lab})
+
+    def draw_data_labels(self):
+        '''
+        Interface method calling _draw_data_labels.
+
+        This method is replaced by StackedGroupedBar, which uses different
+        xpos for the _draw_data_labels call.
+        '''
+
+        self._draw_data_labels()
+
+    @property
+    def gridpos(self):
+
+        return self._gridpos
+
+    @gridpos.setter
+    def gridpos(self, value):
         '''
         We want to keep the gridpos from the first initialization as a
         private attribute, no matter what happens to the instance after that.
         '''
 
-        if '_gridpos' not in self.__dict__.keys():
+        if not hasattr(self, '_gridpos'):
             self._gridpos_0 = value
 
         self._gridpos = value
 
-    def get_gridpos(self):
-
-        return self._gridpos
-
-    gridpos = property(get_gridpos, set_gridpos)
 
     def reset_gridpos(self):
 
@@ -202,24 +333,14 @@ class PlotsBase(metaclass=Meta):
 
     def draw_plot(self):
 
+        self.reset_legend_handles_labels()
         self.gen_plot()
+
+        if self.label_format:
+            self.draw_data_labels()
+
         self.finalize_axis()
 
-    def generate_xpos(self, df):
-        ''' List-like object for x-axis positions, either directly from data
-            or generic. '''
-        if self.on_values:
-            self.xpos = df.index.get_values().tolist()
-        else:
-            barspace = 1 if not self.barspace else self.barspace
-
-            self.xpos = (np.arange(len(df))
-                         + self.x_offset
-                         + (self.ibar - 0.5 * (self.nbar - 1) - 1)
-                         * barspace)
-
-    def get_series_y(self, ic):
-        return np.array([iy for iy in self.data[ic].get_values()])
 
     def generate_colors(self):
         '''
@@ -229,73 +350,27 @@ class PlotsBase(metaclass=Meta):
         if (type(self.colormap) == dict): # color dictionary
             self.colors = self.colormap
         elif (type(self.colormap) == str): #defined constant color
-            self.colors = {self.c_list_color[i]: self.colormap
-                           for i in range(len(self.c_list_color))}
+            self.colors = {self.plotdata.c_list_color[i]: self.colormap
+                           for i in range(len(self.plotdata.c_list_color))}
         else: #built-in colors
             if self.colormap:
                 cmap = self.colormap
             else:
                 cmap = plt.get_cmap('Set2')
             self.colors = {series:
-                           cmap(iseries/float(len(set(self.c_list_color))))
+                           cmap(iseries/float(len(set(self.plotdata.c_list_color))))
                            for iseries, series
-                           in enumerate(set(self.c_list_color))}
+                           in enumerate(set(self.plotdata.c_list_color))}
 
     def generate_opacity(self):
         ''' Same as colors, but for opacity. '''
         if type(self.opacitymap)==dict:
             self.opacity = self.opacitymap;
         else:
-            self.opacity = {cc: self.opacitymap for cc in self.c_list_color}
-
-    def generate_c_list(self):
-        ''' Data series are expected to be organized in columns. c_list is
-            the list of columns.'''
-        self.c_list = [c for c in self.data.columns]
-
-        # c_list_names are used for indexing (colors etc). In case of
-        # multiindex columns only the last element is selected.
-        self.c_list_names = self.c_list.copy()
-        if type(self.c_list[0]) in [list, tuple]:
-            self.c_list_color = [cc[-1] for cc in self.c_list]
-
-            # get relevant dimensions
-            dims = []
-            for idim in range(len(self.c_list[0])):
-                if len(set([c[idim] for c in self.c_list])) > 1:
-                    dims.append(idim)
-            self.c_list_names = [list(c) for c in
-                                 (np.array(self.c_list).T[dims].T)]
-        else:
-            self.c_list_color = self.c_list
-            self.c_list_names = self.c_list
-
-    def draw_data_labels(self, series_name, y, offs=False):
-        """
-        Add flexibly positionable data labels for all data points
-        or a selection thereof
-        """
-
-        if type(offs) == bool and not offs:
-            offs = np.zeros(len(y))
-        labs = [self.label_format.format(iy)
-                if abs(iy) > self.label_threshold else '' for iy in y]
-
-        labs = [str(series_name) + l if l != '' else '' for l in labs]
-
-        for it in self.label_subset:
-
-            label_pos = (self.xpos[it], (offs[it] + self.loc_labels * y[it]))
-            lab = self.ax.annotate(labs[it], xy=(0,0), xytext=label_pos,
-                                   xycoords='data',textcoords='data',
-                                   horizontalalignment=self.label_ha,
-                                   verticalalignment='center',
-                                   rotation=self.label_angle)
+            self.opacity = {cc: self.opacitymap for cc in self.plotdata.c_list_color}
 
 
-            self.labels.update({(labs[it], it): lab})
-
-    def get_legend_handles_labels(self, keep_n=None):
+    def get_legend_handles_labels(self):
         '''
         Get legend handles and labels for the whole axes.
 
@@ -303,29 +378,17 @@ class PlotsBase(metaclass=Meta):
         overwritten in the respective child class.
         '''
 
-        hdls_lbls = self.ax.get_legend_handles_labels()
-        if isinstance(keep_n, int) or hasattr(keep_n, 'len'):
-            hdls_lbls = list(zip(*[(hh, ll.split(', ')[keep_n])
-                                   for hh, ll in zip(*hdls_lbls)]))
+        return self.ax.get_legend_handles_labels()
 
-        return hdls_lbls
-
-
-    def append_plot_legend_handles_labels(self):
-
-        self.pltlgd_handles, self.pltlgd_labels = \
-                                        self.get_legend_handles_labels()
 
     def _reset_xticklabels(self):
 
-        self.ax.xaxis.set_major_locator(mticker.FixedLocator(np.arange(len(self.data))))
-        self.ax.xaxis.set_major_formatter(mticker.FixedFormatter(self.data.index.tolist()))
+        self.ax.xaxis.set_major_locator(mticker.FixedLocator(np.arange(len(self.plotdata.data))))
+        self.ax.xaxis.set_major_formatter(mticker.FixedFormatter(self.plotdata._data.index.tolist()))
         plt.setp(self.ax.get_xticklabels(), rotation=self.xticklabel_rotation)
 
 
     def finalize_axis(self):
-
-        self.append_plot_legend_handles_labels()
 
         self.ax.set_xlabel(self.xlabel)
         self.ax.set_ylabel(self.ylabel)
@@ -374,7 +437,7 @@ class PlotsBase(metaclass=Meta):
             x.set_transform(r+trans)
             if isinstance(x, PathCollection):
                 transoff = x.get_offset_transform()
-                x._transOffset = r+transoff
+                x._transOffset = r + transoff
 
         self.ax.set_xlim(ylim_0)
         self.ax.set_ylim(xlim_0)
@@ -391,25 +454,59 @@ class PlotsBase(metaclass=Meta):
     def reset_offset(self, data):
         ''' Implemented in StackedBase. '''
 
-    def gen_plot(self):
+
+    def add_plot_legend(self, from_ax=False, handles=None, labels=None,
+                        keep_n=None, string_replace_dict=None,
+                        translate_dict=None, **legend_kwargs):
         '''
-        Loops over plot series.
+        Adds a legend to the this plot instance's axes.
+
+        get_legend_handles_labels obtains the legend item handles and labels
+        from the appropriate method. In the default case this is the
+        PlotsBase method. In case of some children classes it is overwritten
+        (e.g. StackedArea).
+
+        Args:
+            keep_n (int): index of series name to be kept as a legend label
+            string_replace_dict (dict): dictionary for multiple String.replace
+                                        operations on labels
+            translate_dict (dict): dictionary with (final) labels as keys
         '''
-        self.reset_offset(self.data)
-        self.reset_legend_handles_labels()
 
-        for iic, ic in enumerate(self.c_list):
-            y = self.get_series_y(ic)
-            ic_name = self.c_list_names[iic]
-            ic_color = self.c_list_color[iic]
 
-            self.linedict.update({ic: self.gen_single_plot_series(ic, iic, ic_color, y)})
+        if not handles and not labels:
+            if from_ax:
+                hdls_lbls = self.ax.get_legend_handles_labels()
+            else:
+                hdls_lbls = self.get_legend_handles_labels()
+        else:
+            hdls_lbls = (handles, labels)
 
-            if self.label_format:
-                self.draw_data_labels(series_name=ic_name, y=y,
-                                      offs=self.offs_slct)
+        hdls_lbls = (hdls_lbls[0], list(map(str, hdls_lbls[1])))
 
-            self.adapt_plot_series(y)
+        print('legend_kwargs in add_plot_legend', legend_kwargs, 'keep_n', keep_n)
+
+        if isinstance(keep_n, int):
+            hdls_lbls = list(zip(*[(hh, ll[keep_n])
+                                   for hh, ll in zip(*hdls_lbls)]))
+
+        hdls, lbls = hdls_lbls
+
+        if string_replace_dict:
+            mrep = lambda s, d: (s if len(d) is 0
+                                else mrep(s.replace(*d.popitem()), d))
+
+            print('string_replace_dict: ', string_replace_dict)
+            lbls = [mrep(str(ll), string_replace_dict.copy())
+                    for ll in lbls]
+
+        if translate_dict:
+            lbls = [translate_dict[ll] if ll in translate_dict else ll
+                    for ll in lbls]
+
+
+        self.ax.legend(handles=hdls, labels=lbls, **legend_kwargs)
+
 
 class BubblePlot(PlotsBase):
     '''
@@ -429,27 +526,27 @@ class BubblePlot(PlotsBase):
 
 
     def gen_plot(self):
-
-        xpos_dict = {vv: ii for ii, vv
-                     in enumerate(self.data.index.get_level_values(0)
-                                                 .unique().tolist())}
+#
+#        xpos_dict = {vv: ii for ii, vv
+#                     in enumerate(self.plotdata.data.index.get_level_values(0)
+#                                                 .unique().tolist())}
 
 
 #        fig, self.ax = plt.subplots(1,1)
 
 
-        for iic, ic in enumerate(self.c_list):
-            data_slct = self.data[ic]
+        for iic, ic in enumerate(self.plotdata.c_list):
+            data_slct = self.plotdata.data[ic]
 
             data_slct = data_slct.reset_index()
 
             s = [iis * self.bubble_scale for iis in data_slct[ic].tolist()]
-            x = data_slct[self.data.index.names[0]].tolist()
-            y = data_slct[self.data.index.names[1]].tolist()
+            x = data_slct[self.plotdata.data.index.names[0]].tolist()
+            y = data_slct[self.plotdata.data.index.names[1]].tolist()
 
 
-            color = self.colors[self.c_list_color[iic]]
-            opacity = self.opacity[self.c_list_color[iic]]
+            color = self.colors[self.plotdata.c_list_color[iic]]
+            opacity = self.opacity[self.plotdata.c_list_color[iic]]
 
 
 #            self.gen_single_plot_series(x, y, s, alpha, )
@@ -472,26 +569,13 @@ class BubblePlot(PlotsBase):
         self.ax.set_xlabel(self.xlabel)
         self.ax.set_ylabel(self.ylabel)
         self.ax.set_title(self.title)
-#
-#        handles, labels = self.ax.get_legend_handles_labels()
-#        self.pltlgd_handles += handles
-#        self.pltlgd_labels += labels
-#
-        self.xtickvals = self.data.index.get_level_values(0).unique()
+
+        self.xtickvals = self.plotdata.data.index.get_level_values(0).unique()
 
         if self.reset_xticklabels and not self.barname:
 
             self.ax.xaxis.set_major_locator(mticker.FixedLocator(np.arange(len(self.xtickvals))))
             self.ax.xaxis.set_major_formatter(mticker.FixedFormatter(self.xtickvals))
-
-#class BubblePlot(Plot3DBase):
-#
-#
-#
-#    self.ax.scatter(x=x, y=y, s=s, alpha=opacity, label=ic,
-#                color=color);
-
-
 
 class PlotPandas(PlotsBase):
     '''
@@ -499,35 +583,50 @@ class PlotPandas(PlotsBase):
     This overwrites the gen_plot as we don't need to loop over series.
     '''
 
-    def __init__(self, data, ax, pd_method, *args, **kwargs):
+    def __init__(self, data, pd_method, *args, **kwargs):
 
         self.on_values=True
 
-        super(PlotPandas, self).__init__(data, ax, *args, **kwargs)
+        super(PlotPandas, self).__init__(data, *args, **kwargs)
+
+        if 'bar' in pd_method:
+            # bar plots on integer indices, not on values; need to set
+            # on_values to False, otherwise the labels are not aligned
+            self.on_values = False
+            self.plotdata.on_values = False
+            self.plotdata.init_xpos()
+
         self.pd_method = pd_method
+
+
+    def get_color_list(self):
+        '''
+        Pandas expects a list of colors corresponding to the data series.
+        '''
+
+        color_list = [self.colors[c] for c in self.plotdata.c_list_color]
+        if len(color_list) <= 1:
+            color_list = color_list[0]
+
+        return color_list
 
     def gen_plot(self):
 
         _pd_method = self.pd_method.split('.')
 
-        obj = self.data
+        obj = self.plotdata.data
         for imeth in _pd_method:
             obj = getattr(obj, imeth)
 
         _plotfunc = obj
 
-        color_list = list(map(self.colors.get,
-                              [c[-1] for c in self.data.columns]))
-        if self.data.columns.size <= 1:
-            color_list = color_list[0]
 
         kwargs = dict(ax=self.ax, marker=self.marker,
                       stacked=self.stacked, lw=self.linewidth,
                       legend=False, alpha=self.opacitymap,
                       edgecolor=self.edgecolor,
-                      markerfacecolor=self.markerfacecolor,
                       markersize=self.markersize,
-                      color=color_list, width=self.barwidth)
+                      color=self.get_color_list(), width=self.barwidth)
 
         # for hist
         if self.pd_method == 'plot.hist':
@@ -545,110 +644,13 @@ class StackedBase(PlotsBase):
     class for
         - stacked area and
         - stacked grouped bar plots.
+
+    APPEARS TO BE OBSOLETE SINCE SWITCH TO PlotData
     '''
     def __init__(self, *args, **kwargs):
 
 
         super(StackedBase, self).__init__(*args, **kwargs)
-
-
-        self.reset_offset(data=self.data)
-        self.generate_c_list() # update in case the offset column got removed
-
-    def get_list_y_offset(self):
-        '''
-        Save list_y_offset in attribute if it doesn't exist yet and delete
-        the corresponding data column.
-        '''
-
-        if not type(self.list_y_offset) is bool:
-            return self.list_y_offset
-        else:
-            list_y_offset = self.data[self.y_offset].copy().values
-            self.data = self.data.drop(self.y_offset, axis=1)
-
-            return list_y_offset
-
-
-    def get_data_offset(self, data):
-        '''
-        If the parameter offset_col is not False, copy the corresponding
-        data columns to the parameter data_offset.
-        '''
-
-        self.data_offset = self.get_zero_offset(data)
-
-
-    def get_zero_offset(self, data):
-
-        return np.zeros(len(data))
-
-    def init_offset(self, data):
-
-        if self.offset_col:
-            self.offs_pos = self.data_offset.copy()
-        else:
-            self.offs_pos = self.get_zero_offset(data)
-        self.offs_neg = self.offs_pos.copy()
-
-    def reset_offset(self, data):
-        '''
-        Input parameters:
-        data -- DataFrame; will be self.data, or a subset thereof
-        '''
-
-        self.init_offset(data)
-
-        if self.y_offset:
-
-            self.list_y_offset = self.get_list_y_offset(data)
-
-            self.offs_pos = self.list_y_offset
-            self.offs_neg = self.list_y_offset
-
-    def adapt_plot_series(self, y):
-        ''' Update the offset after each data series. '''
-
-        print('y in adapt_plot_series: ', y)
-        self.y = y
-        self.offs_pos, self.offs_neg = self.set_offset(y, self.offs_pos,
-                                                       self.offs_neg)
-
-        self.offs_pos *= self.stacked
-        self.offs_neg *= self.stacked
-
-    def set_offset(self, y, offs_pos, offs_neg):
-        '''
-        Update two separate offset vectors for positive and negative
-        values.
-        '''
-
-        y = np.array(y)
-
-        add_pos = y.copy()
-        add_pos[np.isnan(add_pos)] = 0
-        add_pos[add_pos <= 0] = 0
-        add_neg = y.copy()
-        add_neg[np.isnan(add_neg)] = 0
-        add_neg[add_neg >= 0] = 0
-
-        offs_pos += add_pos
-        offs_neg += add_neg
-        return offs_pos, offs_neg
-
-    def get_offset(self, sgn, offs_pos, offs_neg):
-        ''' Assemble positive/negative offset vector for the current
-            series. '''
-        offs_select = np.array([(offs_pos[i] if sgn[i] >= 0 else offs_neg[i])
-                       for i in range(len(sgn))])
-        return offs_select
-
-    def get_sign(self, y):
-        y = np.array(y)
-        return np.sign(np.nan_to_num(y))
-
-
-# %%
 
 class StackedArea(StackedBase):
     ''' Stacked area plot. '''
@@ -659,22 +661,15 @@ class StackedArea(StackedBase):
     def gen_single_plot_series(self, ic, ic_name, ic_color, y):
         ''' Use stacked fill_between to add areas to stacked area plot. '''
 
-        sgn = self.get_sign(y)
-        self.offs_slct = self.get_offset(sgn, self.offs_pos, self.offs_neg)
-
-
-#        edgecolor = self.colors[ic_color] if self.edgecolor is None else self.edgecolor
-
+        offs = self.plotdata.data_offset[ic].values
 
         if self.step == 'post':
-            dx = (self.xpos[2] - self.xpos[1])
-            xpos = [pos - 0.5 * dx for pos in self.xpos] + [self.xpos[-1] + 0.5 * dx] #copy
+            dx = (self.plotdata.xpos[2] - self.plotdata.xpos[1])
+            xpos = [pos - 0.5 * dx for pos in self.plotdata.xpos] + [self.plotdata.xpos[-1] + 0.5 * dx] #copy
             y = np.append(y, y[-1])
-            self.offs_slct = np.append(self.offs_slct, self.offs_slct[-1])
-    #        xpos[-1] = xpos[-1] + 0.5 * (xpos[-1] - xpos[-2])
-    #        xpos[0] = xpos[0] + 0.5 * (xpos[1] - xpos[0])
+            offs = np.append(offs, offs[-1])
         else:
-            xpos = self.xpos
+            xpos = self.plotdata.xpos
 
 
         if self.edgewidth == 0 or (not self.edgewidth):
@@ -685,51 +680,19 @@ class StackedArea(StackedBase):
             edge_opacity = self.opacity[ic_color]
             edgecolor = self.edgecolor
 
-            plot_line = self.ax.step(xpos, self.offs_slct + y,
+            plot_line = self.ax.step(xpos, offs + y,
                                     marker=None,
                                     linewidth=self.edgewidth,
                                     alpha=edge_opacity,
                                     color=edgecolor,
                                     where='post',)
 
-
-        plot_area = self.ax.fill_between(xpos, self.offs_slct, self.offs_slct + y,
+        plot_area = self.ax.fill_between(xpos, offs, offs + y,
                              color=self.colors[ic_color],
                              alpha=self.opacity[ic_color],
                              linewidth=0,
                              label=ic, step=self.step,
                              )
-#
-#data = plt.current_plot.data.copy()
-##
-##
-#self = StackedArea(data, edgecolor='k', opacity=1, edgewidth=2)
-
-
-
-# %%
-
-
-
-
-#
-#        from matplotlib.transforms import Affine2D
-#        from matplotlib.collections import PathCollection
-#
-#
-#        r = Affine2D().rotate_deg(90)
-#
-#        for x in self.ax.images + self.ax.lines + self.ax.collections:
-#            trans = x.get_transform()
-#            x.set_transform(r+trans)
-#            if isinstance(x, PathCollection):
-#                transoff = x.get_offset_transform()
-#                x._transOffset = r+transoff
-
-#        old = self.ax.axis()
-#        self.ax.axis(old[2:4] + old[0:2])
-#
-
 
         self.pltlgd_handles.append(mpatches.Patch(color=self.colors[ic_color],
                                                   alpha=self.opacity[ic_color]))
@@ -743,7 +706,7 @@ class StackedArea(StackedBase):
         from self.ax.
         '''
 
-        return (self.pltlgd_handles, list(map(str, self.pltlgd_labels)))
+        return (self.pltlgd_handles, self.pltlgd_labels)
 
 
 class StackedGroupedBar(StackedBase):
@@ -752,13 +715,17 @@ class StackedGroupedBar(StackedBase):
     using the keyword argument bar=[ibar, nbars]
     '''
     def __init__(self, *args, **kwargs):
+
+        self.on_values = True
+        self.stacked = True
+
         super(StackedGroupedBar, self).__init__(*args, **kwargs)
 
-        self.on_values = False
         self.reset_xticklabels = True
 
         # bars correspond to ind_axy
-        self.list_bars = self.data.index.get_level_values(-1).unique().tolist()
+        self.list_bars = (self.plotdata.data.index
+                              .get_level_values(-1).unique().tolist())
         self.nbar = len(self.list_bars)
 
         # bars require widths
@@ -769,9 +736,10 @@ class StackedGroupedBar(StackedBase):
             self.barspace = 1. / (self.nbar * 1.1 )
 
 
+
     def finalize_axis(self):
         super().finalize_axis()
-        self.gen_barname()
+#        self.gen_barname()
 
     def gen_barname(self):
         ''' Add a barname to the bar group, if provided in the kwargs. '''
@@ -792,50 +760,57 @@ class StackedGroupedBar(StackedBase):
 
         self.reset_legend_handles_labels()
 
-        for iic, ic in enumerate(self.c_list):
+        self.xpos_minor = [] # save for xticks later
 
-            for ibar, bar_name in enumerate(self.list_bars):
-
-                self.ibar = ibar + 1 # bars are 1-indexed
-                self.bar_name = bar_name
-
-                data_bar = self.data.loc[self.data.index.get_level_values(-1) == self.bar_name]
-
-                data_bar = self.data.xs(self.bar_name, axis=0, level=-1)
-
-                # update xpos due to bar selection
-                self.generate_xpos(data_bar)
-
-                y = np.array([iy for iy in data_bar[ic].get_values()])
-
-                self.reset_offset(data_bar)
-
-                ic_name = self.c_list_names[iic]
-                ic_color = self.c_list_color[iic]
-
-                self.linedict.update({ic: self.gen_single_plot_series(ic, iic, ic_color, y)})
-
-            if self.label_format:
-                self.draw_data_labels(series_name=ic_name, y=y,
-                                      offs=self.offs_slct)
-
-            self.adapt_plot_series(y)
+        for ibar, bar_name in enumerate(self.list_bars):
 
 
+            self.ibar = ibar + 1 # bars are 1-indexed
+            self.bar_name = bar_name
 
-    def gen_single_plot_series(self, ic, ic_name, ic_color, y):
+            data_bar = self.plotdata.data.xs(self.bar_name, axis=0, level=-1)
+            offs_slct = self.plotdata.data_offset.xs(self.bar_name, axis=0,
+                                                     level=-1)
+
+            # update xpos due to bar selection
+            self.plotdata.init_xpos(data=data_bar, barspace=self.barspace,
+                                    ibar=self.ibar, nbar=self.nbar,
+                                    x_offset=self.x_offset, on_values=False)
+
+            self.xpos_minor += list(self.plotdata.xpos)
+
+            print('xpos', self.plotdata.xpos)
+
+            for iic, ic in enumerate(self.plotdata.c_list):
+
+                y = data_bar[ic].values
+                offs = offs_slct[ic].values
+                ic_color = self.plotdata.c_list_color[iic]
+
+                args = ic, iic, ic_color, y, offs
+                self.linedict.update({ic: self.gen_single_plot_series(*args)})
+
+#            self.adapt_plot_series(y)
+
+    def draw_data_labels(self):
+        '''
+        Interface method calling _draw_data_labels. Overwrites the parent method.
+        '''
+
+        self._draw_data_labels(xpos=sorted(self.xpos_minor))
+
+
+
+
+    def gen_single_plot_series(self, ic, ic_name, ic_color, y, offs):
         ''' Generate simple bar plot with offsets. The grouping is handled
             through the xpos.'''
-        sgn = self.get_sign(y)
-        self.offs_slct = self.get_offset(sgn, self.offs_pos, self.offs_neg)
 
-
-
-        plot = self.ax.bar(self.xpos, y,
+        plot = self.ax.bar(self.plotdata.xpos, y,
                             edgecolor=self.edgecolor,
                             color=self.colors[ic_color],
                             alpha=self.opacity[ic_color],
-                            bottom=self.offs_slct,
+                            bottom=offs,
                             align='center',
                             linewidth=self.linewidth,
                             width=self.barwidth,
@@ -848,20 +823,31 @@ class StackedGroupedBar(StackedBase):
         For StackedGroupedBar plots the xticklabels don't include the bar names
         '''
 
-        self.ax.xaxis.set_major_locator(mticker.FixedLocator(np.arange(len(self.data))))
-        self.ax.xaxis.set_major_formatter(mticker.FixedFormatter(self.data.xs(self.data.index.get_level_values(-1)[0], level=-1).index))
+        self.ax.xaxis.set_major_locator(mticker.FixedLocator(np.arange(len(self.plotdata.data))))
+        self.ax.xaxis.set_major_formatter(mticker.FixedFormatter(self.plotdata._data.xs(self.plotdata._data.index.get_level_values(-1)[0], level=-1).index))
         plt.setp(self.ax.get_xticklabels(), rotation=self.xticklabel_rotation)
 
+        self.ax.xaxis.set_minor_locator(mticker.FixedLocator(self.xpos_minor))
+        self.ax.xaxis.set_minor_formatter(mticker.FixedFormatter(np.repeat(self.list_bars, len(self.plotdata.xpos))))
+        plt.setp(self.ax.get_xminorticklabels(), rotation=self.xticklabel_rotation)
 
+        self.ax.tick_params(axis='x', direction='in', which='minor', pad=-15)
+
+        for tick in self.ax.xaxis.get_minor_ticks():
+            tick.label1.set_verticalalignment('bottom')
 
 # %
+
+
 class LineBase(PlotsBase):
     ''' All we need for the subsequent definition of line-based plotting
         classes. '''
     def __init__(self, *args, **kwargs):
 
+        kwargs['stacked'] = False
+
         PlotsBase.__init__(self, *args, **kwargs)
-        self.loc_labels = 1
+        self.loc_labels = self.loc_labels if self.stacked else 1
 
     def gen_single_plot_series(self, ic, y):
         '''Plot single series.'''
@@ -871,11 +857,15 @@ class LinePlot(LineBase):
 
     def gen_single_plot_series(self, ic, ic_name, ic_color, y):
 
-        plot = self.ax.plot(self.xpos, y, color=self.colors[ic_color],
+        markerfacecolor = self.colors[ic_color] if not self.markerfacecolor else self.markerfacecolor
+
+        plot = self.ax.plot(self.plotdata.xpos, y, color=self.colors[ic_color],
                      alpha=self.opacity[ic_color],
                      linewidth=self.linewidth,
                      marker=self.marker, label=ic,
-                     markerfacecolor=self.markerfacecolor,
+                     markersize=self.markersize,
+                     markerfacecolor=markerfacecolor,
+                     linestyle=self.linestyle,
                      **self.kwargs)
 
         return plot[0]
@@ -883,9 +873,12 @@ class LinePlot(LineBase):
 class StepPlot(LineBase):
     ''' Step plots. '''
     def gen_single_plot_series(self, ic, ic_name, ic_color, y):
-        plot = self.ax.step(self.xpos, y, label=ic,
+        plot = self.ax.step(self.plotdata.xpos, y, label=ic,
                             marker=self.marker,
                             linewidth=self.linewidth,
+                            linestyle=self.linestyle,
+                            markersize=self.markersize,
+                            markerfacecolor=self.markerfacecolor,
                             alpha=self.opacity[ic_color],
                             color=self.colors[ic_color],
                             where='mid', **self.kwargs)
@@ -946,12 +939,17 @@ class WaterfallChart(PlotsBase):
 
 class BoxPlot(PlotsBase):
 
-    def __init__(self, data, ax, x, *args, **kwargs):
+    def __init__(self, data, x, *args, **kwargs):
+        '''
+        Args:
+            x:
+        '''
 
-        super(BoxPlot, self).__init__(data=data, ax=ax, *args, **kwargs)
+
+        super(BoxPlot, self).__init__(data=data, *args, **kwargs)
 
         # stacking columns
-        self.data = (self.data.rename_axis('hue', axis=1)
+        self.data = (self.plotdata.data.rename_axis('hue', axis=1)
                               .stack()
                               .rename('__value')
                               .reset_index())
@@ -996,15 +994,49 @@ def add_subplotletter(ax, n, ha='left', va='top', loc=(0, 1), offs=(5, -5), fs=N
                     boxstyle='square,pad=0'))
     t.set_zorder(1000)
 
+
 # %%
+
+#self.plotdata._data.index %%
 if __name__ == '__main__':
-    pass
+
+
+#    data = do.data#.loc[('pwr')]
 #
-#    df = do_winsol.data.loc[('(10, 50]', 0, 'winsol')]
+#    x = np.arange(2010, 2011, 0.1) + 100
 #
+#    data = pd.DataFrame(dict(year=x,
+#                      sin=np.sin(x),
+#                      const=np.ones(np.size(x)),
+#                      const_neg=-np.ones(np.size(x)),
+#                      tan=np.maximum(-2, np.minimum(2, np.tan(x)))),
+#                        ).set_index('year')
 #
-#    fig, ax = plt.subplots(1,1)
-#    boxplot = BoxPlot(ax=ax, x='swyr_vl', data=df)
+#    data = pd.concat([data.assign(index='AAAAAAAAAAAAA', sin=data.sin * 0.2), data.assign(index='BBBBBBB', sin=data.sin*2), data.assign(index='C')])
+#    data = data.set_index('index', append=-2)
+
+    data = do.data.loc['DE0']
+
+    self = StackedGroupedBar(data, pd_method='plot.area', stacked=True, opacitymap=0.9,
+                      drawnow=True,
+
+                      label_format='', on_values=True,
+#                      label_subset=[-1,],
+                      reset_xticklabels=False, label_ha='center',
+                      xticklabel_rotation=90, linewidth=0, show_outliers=False,
+                      edgecolor='k', edgewidth=5, bubble_scale=0.001,
+                      loc_labels=0.5, axes_rotation=0,
+                      barwidth=0.35, barspace=0.4)
+
+    self.draw_plot()
+    self.label_format = '\n%.4f'
+
+#    self.add_plot_legend(ncol=2, loc=2,
+#                         string_replace_dict={'value': '', ')': '', '(': ''},
+#                         translate_dict={'wind_total': 'Total wind power'})
 #
 
-#
+
+
+
+
