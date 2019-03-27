@@ -24,7 +24,7 @@ import string
 import random
 
 #from grimsel.auxiliary.aux_general import get_config
-import grimsel.config as config
+import grimsel_config as config
 
 # %%
 
