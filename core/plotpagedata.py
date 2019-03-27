@@ -66,10 +66,6 @@ class PlotPageData():
     def _attributes_to_lists(f, self, args, kwargs):
         ''' Decorator to convert attributes to lists if they are not. '''
 
-        print('~'*90)
-        print(args, kwargs)
-        print('~'*90)
-
         arg_names = inspect.getfullargspec(f).args[1:] # first is self
         kwargs_args = dict(zip(arg_names, args))
 
@@ -85,10 +81,6 @@ class PlotPageData():
                     kwargs[key] = [val] if val else []
                 elif isinstance(val, tuple):
                     kwargs[key] = list(val)
-
-        print('+'*90)
-        print(kwargs)
-        print('+'*90)
 
         return f(**kwargs)
 
