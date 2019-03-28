@@ -5,7 +5,7 @@ Created on Sat Jan 19 14:30:02 2019
 
 @author: user
 """
-
+__all__ = ['core', 'auxiliary']
 
 from pyAndy.core.plotpage import PlotTiled
 from pyAndy.core.plotpage import PlotPage
